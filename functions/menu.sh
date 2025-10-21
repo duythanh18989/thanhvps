@@ -731,8 +731,37 @@ show_filemanager_info() {
 
 # SSL functions (delegates to setup_ssl.sh)
 install_ssl() {
-  bash "$BASE_DIR/functions/setup_ssl.sh"
-  setup_ssl
+  if $use_gum; then
+    domain=$(gum input --placeholder "Nhập domain (vd: example.com)")
+  else
+    read -p "Nhập domain: " domain
+  fi
+  
+  if [ -z "$domain" ]; then
+    log_error "Domain không được để trống!"
+    return 1
+  fi
+  
+  log_info "🔐 Đang cài SSL cho domain: $domain"
+  
+  # Install certbot if not exists
+  if ! command_exists certbot; then
+    log_info "Cài đặt certbot..."
+    apt-get update -qq
+    apt-get install -y certbot python3-certbot-nginx
+  fi
+  
+  # Request SSL
+  log_info "Request SSL certificate từ Let's Encrypt..."
+  if certbot --nginx -d "$domain" -d "www.$domain" --non-interactive --agree-tos --email "admin@$domain" --redirect; then
+    log_info "✅ SSL đã được cài đặt thành công cho $domain"
+    log_info "🔒 HTTPS: https://$domain"
+  else
+    log_error "❌ Không thể cài SSL. Kiểm tra:"
+    log_error "  1. Domain đã trỏ đúng IP chưa?"
+    log_error "  2. Website/vhost đã tạo chưa?"
+    log_error "  3. Port 80 có accessible từ internet không?"
+  fi
 }
 
 renew_ssl() {
