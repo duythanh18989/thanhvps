@@ -240,17 +240,19 @@ show_deploy_menu() {
       "1  Deploy NodeJS App (Express/NestJS/Next.js)" \
       "2  Deploy PHP Website (Laravel/WordPress)" \
       "3  Danh sach websites da deploy" \
-      "4  Xoa website da deploy" \
-      "5  Quan ly NodeJS (PM2/Versions)" \
-      "6  Quay lai")
+      "4  Doi PHP version cho site" \
+      "5  Xoa website da deploy" \
+      "6  Quan ly NodeJS (PM2/Versions)" \
+      "7  Quay lai")
   else
     choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 20 70 10 \
       "1" "Deploy NodeJS App" \
       "2" "Deploy PHP Website" \
       "3" "Danh sach websites" \
-      "4" "Xoa website" \
-      "5" "Quan ly NodeJS" \
-      "6" "Quay lai" 3>&1 1>&2 2>&3)
+      "4" "Doi PHP version" \
+      "5" "Xoa website" \
+      "6" "Quan ly NodeJS" \
+      "7" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -259,9 +261,10 @@ show_deploy_menu() {
     1) deploy_nodejs_app; read -p "Press Enter to continue..."; show_deploy_menu ;;
     2) deploy_php_website; read -p "Press Enter to continue..."; show_deploy_menu ;;
     3) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    4) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    5) show_nodejs_menu; show_deploy_menu ;;
-    6|"") show_main_menu ;;
+    4) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    5) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    6) show_nodejs_menu; show_deploy_menu ;;
+    7|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_deploy_menu ;;
   esac
 }

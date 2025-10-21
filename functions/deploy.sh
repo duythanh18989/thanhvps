@@ -378,3 +378,138 @@ remove_deployed_site() {
   
   log_info "✅ Đã xóa website $domain"
 }
+
+# Change PHP version for deployed site
+change_site_php_version() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🐘 ĐỔI PHP VERSION CHO SITE"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # List PHP sites (exclude phpmyadmin and non-PHP sites)
+  echo "📋 Danh sách PHP sites:"
+  if [ ! -d "/etc/nginx/sites-enabled" ]; then
+    log_error "❌ Nginx chưa được cài đặt"
+    return 1
+  fi
+  
+  local php_sites=()
+  for site in /etc/nginx/sites-enabled/*.conf; do
+    if [ -f "$site" ] && grep -q "fastcgi_pass" "$site" 2>/dev/null; then
+      domain=$(basename "$site" .conf)
+      current_php=$(grep -oP 'php\K[0-9.]+' "$site" | head -1)
+      echo "  - $domain (PHP ${current_php:-unknown})"
+      php_sites+=("$domain")
+    fi
+  done
+  
+  if [ ${#php_sites[@]} -eq 0 ]; then
+    log_error "❌ Không tìm thấy PHP site nào"
+    return 1
+  fi
+  
+  echo ""
+  
+  # Input domain
+  if $use_gum; then
+    domain=$(gum input --placeholder "Nhập domain cần đổi PHP version")
+  else
+    read -p "Nhập domain: " domain
+  fi
+  
+  if [ -z "$domain" ]; then
+    log_error "❌ Domain không được để trống"
+    return 1
+  fi
+  
+  # Check if site exists
+  if [ ! -f "/etc/nginx/sites-available/$domain.conf" ]; then
+    log_error "❌ Site $domain không tồn tại"
+    return 1
+  fi
+  
+  # Check if it's a PHP site
+  if ! grep -q "fastcgi_pass" "/etc/nginx/sites-available/$domain.conf" 2>/dev/null; then
+    log_error "❌ $domain không phải là PHP site"
+    return 1
+  fi
+  
+  # Get current PHP version
+  current_php=$(grep -oP 'php\K[0-9.]+' "/etc/nginx/sites-available/$domain.conf" | head -1)
+  
+  echo "📊 PHP version hiện tại: ${current_php:-unknown}"
+  echo ""
+  
+  # List available PHP versions
+  echo "📦 PHP versions có sẵn:"
+  local available_versions=()
+  for ver in 7.4 8.1 8.2 8.3; do
+    if systemctl list-unit-files | grep -q "php${ver}-fpm.service" 2>/dev/null; then
+      echo "  ✅ PHP $ver"
+      available_versions+=("$ver")
+    else
+      echo "  ❌ PHP $ver (chưa cài)"
+    fi
+  done
+  
+  if [ ${#available_versions[@]} -eq 0 ]; then
+    log_error "❌ Không có PHP version nào được cài đặt"
+    return 1
+  fi
+  
+  echo ""
+  
+  # Select new version
+  if $use_gum; then
+    new_version=$(gum choose "${available_versions[@]}")
+  else
+    echo "Chọn PHP version mới:"
+    for i in "${!available_versions[@]}"; do
+      echo "$((i+1))) ${available_versions[$i]}"
+    done
+    read -p "Chọn [1]: " choice
+    choice=${choice:-1}
+    new_version="${available_versions[$((choice-1))]}"
+  fi
+  
+  if [ -z "$new_version" ]; then
+    log_error "❌ Vui lòng chọn PHP version"
+    return 1
+  fi
+  
+  if [ "$new_version" = "$current_php" ]; then
+    log_warn "⚠️  PHP version đã là $new_version rồi!"
+    return 0
+  fi
+  
+  # Backup config
+  cp "/etc/nginx/sites-available/$domain.conf" "/etc/nginx/sites-available/$domain.conf.bak"
+  
+  # Update Nginx config
+  log_info "🔄 Đang cập nhật Nginx config..."
+  
+  # Replace PHP-FPM socket path
+  sed -i "s|php[0-9.]*-fpm.sock|php${new_version}-fpm.sock|g" "/etc/nginx/sites-available/$domain.conf"
+  
+  # Test Nginx config
+  if ! nginx -t &>/dev/null; then
+    log_error "❌ Nginx config có lỗi, rollback..."
+    mv "/etc/nginx/sites-available/$domain.conf.bak" "/etc/nginx/sites-available/$domain.conf"
+    return 1
+  fi
+  
+  # Reload Nginx
+  systemctl reload nginx
+  
+  # Remove backup
+  rm -f "/etc/nginx/sites-available/$domain.conf.bak"
+  
+  echo ""
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info "✅ ĐÃ ĐỔI PHP VERSION THÀNH CÔNG!"
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info "🌐 Site: $domain"
+  log_info "🐘 PHP cũ: ${current_php:-unknown}"
+  log_info "🐘 PHP mới: $new_version"
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
