@@ -195,7 +195,22 @@ list_mysql_users() {
   echo "👥 DANH SÁCH USER MYSQL"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   
-  mysql -e "SELECT User, Host FROM mysql.user ORDER BY User;" 2>/dev/null || {
+  # Get MySQL root password
+  local mysql_pass=""
+  if [ -f "$INSTALL_LOG" ]; then
+    mysql_pass=$(grep "MySQL root password:" "$INSTALL_LOG" | tail -1 | cut -d':' -f2- | xargs)
+  fi
+  
+  if [ -z "$mysql_pass" ]; then
+    if $use_gum; then
+      mysql_pass=$(gum input --password --placeholder "Nhập MySQL root password")
+    else
+      read -sp "Nhập MySQL root password: " mysql_pass
+      echo ""
+    fi
+  fi
+  
+  mysql -uroot -p"$mysql_pass" -e "SELECT User, Host FROM mysql.user ORDER BY User;" 2>/dev/null || {
     log_error "❌ Không thể kết nối MySQL. Kiểm tra mật khẩu root."
     return 1
   }
@@ -212,9 +227,28 @@ change_mysql_password() {
   echo "🔐 ĐỔI MẬT KHẨU MYSQL USER"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   
+  # Get MySQL root password
+  local current_root_pass=""
+  if [ -f "$INSTALL_LOG" ]; then
+    current_root_pass=$(grep "MySQL root password:" "$INSTALL_LOG" | tail -1 | cut -d':' -f2- | xargs)
+  fi
+  
+  if [ -z "$current_root_pass" ]; then
+    if $use_gum; then
+      current_root_pass=$(gum input --password --placeholder "Nhập MySQL root password hiện tại")
+    else
+      read -sp "Nhập MySQL root password hiện tại: " current_root_pass
+      echo ""
+    fi
+  fi
+  
   # List users first
+  echo ""
   echo "Danh sách users:"
-  mysql -e "SELECT User, Host FROM mysql.user WHERE User != '' ORDER BY User;" 2>/dev/null
+  mysql -uroot -p"$current_root_pass" -e "SELECT User, Host FROM mysql.user WHERE User != '' ORDER BY User;" 2>/dev/null || {
+    log_error "❌ Không thể kết nối MySQL. Kiểm tra mật khẩu root."
+    return 1
+  }
   echo ""
   
   if $use_gum; then
@@ -237,12 +271,12 @@ change_mysql_password() {
   fi
   
   # Change password
-  mysql -e "ALTER USER '${username}'@'localhost' IDENTIFIED BY '${new_password}';" 2>/dev/null || {
+  mysql -uroot -p"$current_root_pass" -e "ALTER USER '${username}'@'localhost' IDENTIFIED BY '${new_password}';" 2>/dev/null || {
     log_error "❌ Không thể đổi mật khẩu. Kiểm tra user có tồn tại không."
     return 1
   }
   
-  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
+  mysql -uroot -p"$current_root_pass" -e "FLUSH PRIVILEGES;" 2>/dev/null
   
   log_info "✅ Đã đổi mật khẩu cho user: $username"
   
@@ -250,5 +284,101 @@ change_mysql_password() {
   if [ "$username" = "root" ] && [ -f "$INSTALL_LOG" ]; then
     echo "MySQL root password: $new_password (changed on $(date '+%Y-%m-%d %H:%M:%S'))" >> "$INSTALL_LOG"
     log_info "📝 Mật khẩu đã được lưu vào: $INSTALL_LOG"
+  fi
+}
+
+# Reset MySQL root password (recovery mode)
+reset_mysql_root_password() {
+  if ! systemctl is-active --quiet mariadb; then
+    log_error "❌ MariaDB service không chạy"
+    return 1
+  fi
+  
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔄 RESET MẬT KHẨU MYSQL ROOT"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "⚠️  Tính năng này sẽ:"
+  echo "   1. Dừng MySQL service"
+  echo "   2. Khởi động MySQL ở chế độ skip-grant-tables"
+  echo "   3. Reset mật khẩu root"
+  echo "   4. Khởi động lại MySQL bình thường"
+  echo ""
+  
+  if $use_gum; then
+    confirm=$(gum choose "Tiếp tục reset" "Hủy bỏ")
+    if [[ "$confirm" == "Hủy bỏ" ]]; then
+      log_info "❌ Đã hủy reset password"
+      return 0
+    fi
+    
+    new_password=$(gum input --password --placeholder "Nhập mật khẩu ROOT mới (tối thiểu 8 ký tự)")
+  else
+    read -p "Bạn có chắc muốn reset password? (y/n): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      log_info "❌ Đã hủy reset password"
+      return 0
+    fi
+    
+    read -sp "Nhập mật khẩu ROOT mới: " new_password
+    echo ""
+  fi
+  
+  # Validate password length
+  if [ ${#new_password} -lt 8 ]; then
+    log_error "❌ Mật khẩu phải có ít nhất 8 ký tự"
+    return 1
+  fi
+  
+  log_info "🔄 Đang dừng MySQL service..."
+  systemctl stop mariadb
+  
+  log_info "🔄 Khởi động MySQL ở safe mode..."
+  
+  # Start MySQL in safe mode
+  mysqld_safe --skip-grant-tables --skip-networking &
+  SAFE_PID=$!
+  
+  # Wait for MySQL to start
+  sleep 5
+  
+  log_info "🔄 Đang reset mật khẩu root..."
+  
+  # Reset password
+  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
+  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${new_password}';" 2>/dev/null || {
+    # Try old method for older MySQL versions
+    mysql -e "UPDATE mysql.user SET Password=PASSWORD('${new_password}') WHERE User='root';" 2>/dev/null
+    mysql -e "UPDATE mysql.user SET authentication_string=PASSWORD('${new_password}') WHERE User='root';" 2>/dev/null
+  }
+  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
+  
+  # Kill safe mode MySQL
+  log_info "🔄 Dừng safe mode..."
+  kill $SAFE_PID 2>/dev/null
+  sleep 2
+  
+  # Make sure all mysql processes are stopped
+  killall mysqld 2>/dev/null
+  sleep 2
+  
+  # Start MySQL normally
+  log_info "🔄 Khởi động MySQL bình thường..."
+  systemctl start mariadb
+  
+  sleep 3
+  
+  # Test new password
+  if mysql -uroot -p"$new_password" -e "SELECT 1;" &>/dev/null; then
+    log_info "✅ Reset mật khẩu root thành công!"
+    
+    # Update log file
+    if [ -f "$INSTALL_LOG" ]; then
+      echo "MySQL root password: $new_password (reset on $(date '+%Y-%m-%d %H:%M:%S'))" >> "$INSTALL_LOG"
+      log_info "📝 Mật khẩu đã được lưu vào: $INSTALL_LOG"
+    fi
+  else
+    log_error "❌ Reset mật khẩu thất bại. Vui lòng kiểm tra lại."
+    return 1
   fi
 }
