@@ -31,13 +31,14 @@ else
 fi
 
 # ------------------------------------------------------
-# Load all other function modules (exclude autoupdate.sh and backup.sh)
+# Load all other function modules (exclude autoupdate.sh, backup.sh, and menu.sh itself)
 # ------------------------------------------------------
 for file in "$BASE_DIR"/functions/*.sh; do
   [ -f "$file" ] && \
   [ "$file" != "$BASE_DIR/functions/utils.sh" ] && \
   [ "$file" != "$BASE_DIR/functions/autoupdate.sh" ] && \
   [ "$file" != "$BASE_DIR/functions/backup.sh" ] && \
+  [ "$file" != "$BASE_DIR/functions/menu.sh" ] && \
   source "$file"
 done
 
