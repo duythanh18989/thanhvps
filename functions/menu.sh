@@ -1006,7 +1006,16 @@ install_ssl() {
   
   # Request SSL certificate only (certonly mode)
   log_info "🔐 Request SSL certificate từ Let's Encrypt..."
-  if certbot certonly --nginx $certbot_domains --non-interactive --agree-tos --email "admin@$primary_domain"; then
+  
+  # Check if certificate already exists for first domain
+  local cert_domain=$(echo $all_domains | awk '{print $1}')
+  local expand_flag=""
+  if [ -d "/etc/letsencrypt/live/$cert_domain" ]; then
+    log_info "ℹ️  Tìm thấy certificate cũ, sẽ expand để thêm domains mới"
+    expand_flag="--expand"
+  fi
+  
+  if certbot certonly --nginx $certbot_domains $expand_flag --non-interactive --agree-tos --email "admin@$primary_domain"; then
     log_info "✅ Certificate issued thành công!"
     
     # Manually configure SSL in Nginx
