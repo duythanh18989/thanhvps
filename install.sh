@@ -12,7 +12,8 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # --- Đặt thư mục gốc của script ---
-BASE_DIR=$(cd "$(dirname "$0")" && pwd)
+#BASE_DIR=$(cd "$(dirname "$0")" && pwd)
+BASE_DIR="$(dirname "$0")/thanhvps"
 
 # --- Load file utils ---
 source "$BASE_DIR/functions/utils.sh"
