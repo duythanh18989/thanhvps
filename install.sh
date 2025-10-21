@@ -13,7 +13,7 @@ fi
 
 # --- Đặt thư mục gốc của script ---
 #BASE_DIR=$(cd "$(dirname "$0")" && pwd)
-BASE_DIR="$(dirname "$0")/thanhvps"
+BASE_DIR="$(dirname "$0")"
 
 # --- Load file utils ---
 source "$BASE_DIR/functions/utils.sh"
