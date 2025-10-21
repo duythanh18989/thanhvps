@@ -89,41 +89,44 @@ show_main_menu() {
     choice=$(gum choose \
       "1  🌐 Quản lý Website (Thêm/Xóa/List/SSL)" \
       "2  🗄️  Quản lý Database (Create/Delete/Export)" \
-      "3  💾 Backup & Phục hồi" \
-      "4  ⚙️  Quản trị Hệ thống (Restart/Monitor/Clean)" \
-      "5  🐘 Quản lý PHP (Switch version/Config)" \
-      "6  📁 File Manager (FileBrowser)" \
-      "7  🔒 Quản lý SSL/HTTPS" \
-      "8  🔄 Auto Update Script" \
-      "9  📊 Thông tin VPS" \
+      "3  � Deploy Website (NodeJS/PHP Quick)" \
+      "4  �💾 Backup & Phục hồi" \
+      "5  ⚙️  Quản trị Hệ thống (Restart/Monitor/Clean)" \
+      "6  🐘 Quản lý PHP (Switch version/Config)" \
+      "7  📁 File Manager (FileBrowser)" \
+      "8  🔒 Quản lý SSL/HTTPS" \
+      "9  🔄 Auto Update Script" \
+      "I  📊 Thông tin VPS" \
       "0  🚪 Thoát")
   else
     choice=$(whiptail --title "Menu Quan Ly VPS" --menu "Chon chuc nang:" 25 80 15 \
       "1" "🌐 Quan ly Website" \
       "2" "🗄️  Quan ly Database" \
-      "3" "💾 Backup & Phuc hoi" \
-      "4" "⚙️  Quan tri He thong" \
-      "5" "🐘 Quan ly PHP" \
-      "6" "📁 File Manager" \
-      "7" "🔒 Quan ly SSL" \
-      "8" "🔄 Auto Update" \
-      "9" "📊 Thong tin VPS" \
+      "3" "� Deploy Website" \
+      "4" "�💾 Backup & Phuc hoi" \
+      "5" "⚙️  Quan tri He thong" \
+      "6" "🐘 Quan ly PHP" \
+      "7" "📁 File Manager" \
+      "8" "🔒 Quan ly SSL" \
+      "9" "🔄 Auto Update" \
+      "I" "📊 Thong tin VPS" \
       "0" "🚪 Thoat" 3>&1 1>&2 2>&3)
   fi
 
   # Parse choice (extract number)
-  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  local num=$(echo "$choice" | grep -o '^[0-9IiIi]*' | tr '[:lower:]' '[:upper:]')
   
   case "$num" in
     1) show_website_menu ;;
     2) show_db_menu ;;
-    3) show_backup_menu ;;
-    4) show_system_menu ;;
-    5) show_php_menu ;;
-    6) show_filemanager_menu ;;
-    7) show_ssl_menu ;;
-    8) bash "$BASE_DIR/functions/autoupdate.sh"; read -p "Press Enter to continue..."; show_main_menu ;;
-    9) show_info_menu ;;
+    3) show_deploy_menu ;;
+    4) show_backup_menu ;;
+    5) show_system_menu ;;
+    6) show_php_menu ;;
+    7) show_filemanager_menu ;;
+    8) show_ssl_menu ;;
+    9) bash "$BASE_DIR/functions/autoupdate.sh"; read -p "Press Enter to continue..."; show_main_menu ;;
+    I) show_info_menu ;;
     0|"") echo "Tam biet!"; exit 0 ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_main_menu ;;
   esac
@@ -225,6 +228,93 @@ show_db_menu() {
 # ------------------------------------------------------
 # Menu: Backup
 # ------------------------------------------------------
+# Menu: Deploy Website
+# ------------------------------------------------------
+show_deploy_menu() {
+  if $use_gum; then
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 DEPLOY WEBSITE NHANH"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    choice=$(gum choose \
+      "1  Deploy NodeJS App (Express/NestJS/Next.js)" \
+      "2  Deploy PHP Website (Laravel/WordPress)" \
+      "3  Danh sach websites da deploy" \
+      "4  Xoa website da deploy" \
+      "5  Quan ly NodeJS (PM2/Versions)" \
+      "6  Quay lai")
+  else
+    choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 20 70 10 \
+      "1" "Deploy NodeJS App" \
+      "2" "Deploy PHP Website" \
+      "3" "Danh sach websites" \
+      "4" "Xoa website" \
+      "5" "Quan ly NodeJS" \
+      "6" "Quay lai" 3>&1 1>&2 2>&3)
+  fi
+
+  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  
+  case "$num" in
+    1) deploy_nodejs_app; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    2) deploy_php_website; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    3) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    4) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    5) show_nodejs_menu; show_deploy_menu ;;
+    6|"") show_main_menu ;;
+    *) log_error "Lua chon khong hop le!"; sleep 1; show_deploy_menu ;;
+  esac
+}
+
+# ------------------------------------------------------
+# Menu: NodeJS Management
+# ------------------------------------------------------
+show_nodejs_menu() {
+  if $use_gum; then
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🟢 QUẢN LÝ NODEJS"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Show NodeJS info if installed
+    if command_exists node; then
+      echo "📦 Node: $(node -v) | NPM: $(npm -v)"
+      if command_exists pm2; then
+        echo "🔧 PM2: $(pm2 -v)"
+      fi
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    fi
+    
+    choice=$(gum choose \
+      "1  Cai dat NodeJS/NVM/PM2" \
+      "2  Quan ly PM2 Apps (Start/Stop/Restart/Logs)" \
+      "3  Quan ly Node Versions (Install/Remove)" \
+      "4  Xem thong tin NodeJS" \
+      "5  Quay lai")
+  else
+    choice=$(whiptail --title "Quan ly NodeJS" --menu "Chon tac vu:" 20 70 10 \
+      "1" "Cai dat NodeJS" \
+      "2" "Quan ly PM2 Apps" \
+      "3" "Quan ly Node Versions" \
+      "4" "Xem thong tin" \
+      "5" "Quay lai" 3>&1 1>&2 2>&3)
+  fi
+
+  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  
+  case "$num" in
+    1) install_nodejs; read -p "Press Enter to continue..."; show_nodejs_menu ;;
+    2) manage_pm2_apps; read -p "Press Enter to continue..."; show_nodejs_menu ;;
+    3) manage_node_versions; read -p "Press Enter to continue..."; show_nodejs_menu ;;
+    4) nodejs_info; read -p "Press Enter to continue..."; show_nodejs_menu ;;
+    5|"") return 0 ;;
+    *) log_error "Lua chon khong hop le!"; sleep 1; show_nodejs_menu ;;
+  esac
+}
+
+# ------------------------------------------------------
+# Menu: Backup
+# ------------------------------------------------------
 show_backup_menu() {
   clear
   bash "$BASE_DIR/functions/backup.sh"
@@ -247,8 +337,7 @@ show_system_menu() {
       "3  Dọn dẹp cache/log" \
       "4  Cấu hình Firewall (UFW)" \
       "5  Cài đặt Redis Cache" \
-      "6  Cài đặt NodeJS/PM2" \
-      "7  Quay lại")
+      "6  Quay lại")
   else
     choice=$(whiptail --title "Quan tri He thong" --menu "Chon tac vu:" 20 70 10 \
       "1" "Restart services" \
@@ -256,8 +345,7 @@ show_system_menu() {
       "3" "Don dep cache/log" \
       "4" "Cau hinh Firewall" \
       "5" "Cai dat Redis" \
-      "6" "Cai dat NodeJS" \
-      "7" "Quay lai" 3>&1 1>&2 2>&3)
+      "6" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -268,8 +356,7 @@ show_system_menu() {
     3) clean_system; read -p "Press Enter to continue..."; show_system_menu ;;
     4) configure_firewall; read -p "Press Enter to continue..."; show_system_menu ;;
     5) install_redis; read -p "Press Enter to continue..."; show_system_menu ;;
-    6) install_nodejs; read -p "Press Enter to continue..."; show_system_menu ;;
-    7|"") show_main_menu ;;
+    6|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_system_menu ;;
   esac
 }
