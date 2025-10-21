@@ -711,18 +711,42 @@ add_filemanager_user() {
 change_filemanager_password() {
   if $use_gum; then
     username=$(gum input --placeholder "Username" --value "admin")
-    password=$(gum input --password --placeholder "New Password")
+    password=$(gum input --password --placeholder "New Password (min 12 chars)")
   else
     read -p "Username [admin]: " username
     username=${username:-admin}
-    read -sp "New Password: " password
+    read -sp "New Password (min 12 chars): " password
     echo ""
   fi
   
-  if [ -n "$password" ]; then
-    filebrowser users update "$username" --password "$password" --database /etc/filebrowser/filebrowser.db
-    log_info "✅ Password updated for $username"
+  if [ -z "$password" ]; then
+    log_error "Password cannot be empty"
+    return 1
   fi
+  
+  if [ ${#password} -lt 12 ]; then
+    log_error "Password must be at least 12 characters"
+    return 1
+  fi
+  
+  # Stop service to update database
+  systemctl stop filebrowser
+  sleep 2
+  
+  if filebrowser users update "$username" --password "$password" --database /etc/filebrowser/filebrowser.db 2>/dev/null; then
+    log_info "✅ Password updated for $username"
+    
+    # Update log file
+    sed -i "/filebrowser_pass=/d" "$BASE_DIR/logs/install.log" 2>/dev/null
+    echo "filebrowser_pass=$password" >> "$BASE_DIR/logs/install.log"
+    
+    log_info "New credentials saved to log"
+  else
+    log_error "❌ Failed to update password"
+  fi
+  
+  # Start service
+  systemctl start filebrowser
 }
 
 show_filemanager_info() {
@@ -746,9 +770,11 @@ show_filemanager_info() {
     if [ -n "$fb_user" ] && [ -n "$fb_pass" ]; then
       echo "  Username: $fb_user"
       echo "  Password: $fb_pass"
+      echo ""
+      echo "  ℹ️  If password doesn't work, reset it via menu option 4"
     else
       echo "  Credentials not found in logs"
-      echo "  Try resetting password via menu option 4"
+      echo "  Reset password via menu option 4"
     fi
     
     echo ""
