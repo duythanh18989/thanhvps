@@ -182,14 +182,16 @@ show_db_menu() {
       "2  Xoa database" \
       "3  Danh sach database" \
       "4  Export database" \
-      "5  Quay lai")
+      "5  Cai dat phpMyAdmin" \
+      "6  Quay lai")
   else
     choice=$(whiptail --title "Quan ly Database" --menu "Chon tac vu:" 20 70 10 \
       "1" "Tao database moi" \
       "2" "Xoa database" \
       "3" "Danh sach database" \
       "4" "Export database" \
-      "5" "Quay lai" 3>&1 1>&2 2>&3)
+      "5" "Cai dat phpMyAdmin" \
+      "6" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -199,7 +201,8 @@ show_db_menu() {
     2) delete_db; read -p "Press Enter to continue..."; show_db_menu ;;
     3) list_db; read -p "Press Enter to continue..."; show_db_menu ;;
     4) export_db; read -p "Press Enter to continue..."; show_db_menu ;;
-    5|"") show_main_menu ;;
+    5) install_phpmyadmin_menu; read -p "Press Enter to continue..."; show_db_menu ;;
+    6|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_db_menu ;;
   esac
 }
@@ -888,6 +891,50 @@ restart_nginx_php() {
       systemctl restart "php${ver}-fpm" && log_info "✅ PHP ${ver} restarted"
     fi
   done
+}
+
+# phpMyAdmin installation wrapper
+install_phpmyadmin_menu() {
+  source "$BASE_DIR/functions/setup_phpmyadmin.sh"
+  
+  if [ -d "/var/www/phpmyadmin" ]; then
+    log_warn "⚠️  phpMyAdmin đã được cài đặt"
+    read -p "Bạn có muốn cài lại không? (y/n): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      return 0
+    fi
+    uninstall_phpmyadmin
+  fi
+  
+  if $use_gum; then
+    mode=$(gum choose "Port-based (8081)" "Subdomain (pma.domain.com)")
+  else
+    echo "Choose installation mode:"
+    echo "1) Port-based (http://IP:8081)"
+    echo "2) Subdomain (http://pma.domain.com)"
+    read -p "Select [1]: " mode_choice
+    mode_choice=${mode_choice:-1}
+    if [ "$mode_choice" = "2" ]; then
+      mode="Subdomain"
+    else
+      mode="Port-based"
+    fi
+  fi
+  
+  if [[ "$mode" == *"Subdomain"* ]]; then
+    export CONFIG_phpmyadmin_mode="subdomain"
+    if $use_gum; then
+      domain=$(gum input --placeholder "Enter subdomain (e.g., pma.example.com)")
+    else
+      read -p "Enter subdomain: " domain
+    fi
+    export CONFIG_phpmyadmin_domain="$domain"
+  else
+    export CONFIG_phpmyadmin_mode="port"
+    export CONFIG_phpmyadmin_port="8081"
+  fi
+  
+  install_phpmyadmin
 }
 
 # ------------------------------------------------------
