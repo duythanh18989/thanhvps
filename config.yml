@@ -1,0 +1,12 @@
+default_domain: demo.local
+php_versions:
+  - 7.4
+  - 8.1
+  - 8.2
+  - 8.3
+filemanager_port: 8080
+auto_ssl: true
+mysql:
+  random_password: true
+backup:
+  enabled: false

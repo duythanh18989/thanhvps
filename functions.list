@@ -1,0 +1,5 @@
+nginx.sh
+mysql.sh
+backup.sh
+system.sh
+autoupdate.sh
