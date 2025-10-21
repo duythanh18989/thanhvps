@@ -31,12 +31,13 @@ else
 fi
 
 # ------------------------------------------------------
-# Load all other function modules (exclude autoupdate.sh)
+# Load all other function modules (exclude autoupdate.sh and backup.sh)
 # ------------------------------------------------------
 for file in "$BASE_DIR"/functions/*.sh; do
   [ -f "$file" ] && \
   [ "$file" != "$BASE_DIR/functions/utils.sh" ] && \
   [ "$file" != "$BASE_DIR/functions/autoupdate.sh" ] && \
+  [ "$file" != "$BASE_DIR/functions/backup.sh" ] && \
   source "$file"
 done
 
