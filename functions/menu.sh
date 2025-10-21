@@ -240,21 +240,23 @@ show_deploy_menu() {
       "1  Deploy NodeJS App (Express/NestJS/Next.js)" \
       "2  Deploy PHP Website (Laravel/WordPress)" \
       "3  Danh sach websites da deploy" \
-      "4  Doi PHP version cho site" \
-      "5  Fix permissions cho website" \
-      "6  Xoa website da deploy" \
-      "7  Quan ly NodeJS (PM2/Versions)" \
-      "8  Quay lai")
+      "4  Them alias/domain phu cho site" \
+      "5  Doi PHP version cho site" \
+      "6  Fix permissions cho website" \
+      "7  Xoa website da deploy" \
+      "8  Quan ly NodeJS (PM2/Versions)" \
+      "9  Quay lai")
   else
-    choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 20 70 10 \
+    choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 22 70 12 \
       "1" "Deploy NodeJS App" \
       "2" "Deploy PHP Website" \
       "3" "Danh sach websites" \
-      "4" "Doi PHP version" \
-      "5" "Fix permissions" \
-      "6" "Xoa website" \
-      "7" "Quan ly NodeJS" \
-      "8" "Quay lai" 3>&1 1>&2 2>&3)
+      "4" "Them alias/domain phu" \
+      "5" "Doi PHP version" \
+      "6" "Fix permissions" \
+      "7" "Xoa website" \
+      "8" "Quan ly NodeJS" \
+      "9" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -263,11 +265,12 @@ show_deploy_menu() {
     1) deploy_nodejs_app; read -p "Press Enter to continue..."; show_deploy_menu ;;
     2) deploy_php_website; read -p "Press Enter to continue..."; show_deploy_menu ;;
     3) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    4) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    5) fix_site_permissions; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    6) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    7) show_nodejs_menu; show_deploy_menu ;;
-    8|"") show_main_menu ;;
+    4) add_site_alias; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    5) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    6) fix_site_permissions; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    7) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    8) show_nodejs_menu; show_deploy_menu ;;
+    9|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_deploy_menu ;;
   esac
 }

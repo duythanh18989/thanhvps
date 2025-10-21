@@ -643,5 +643,108 @@ fix_site_permissions() {
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   fi
 }
+
+# Add alias/additional domain to existing site
+add_site_alias() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔗 THÊM ALIAS/DOMAIN PHỤ CHO SITE"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  if [ ! -d "/etc/nginx/sites-enabled" ]; then
+    log_error "❌ Nginx chưa được cài đặt"
+    return 1
+  fi
+  
+  # List existing sites
+  echo "📋 Danh sách sites hiện có:"
+  local sites=()
+  for site in /etc/nginx/sites-enabled/*.conf; do
+    if [ -f "$site" ]; then
+      domain=$(basename "$site" .conf)
+      current_aliases=$(grep "server_name" "$site" | head -1 | sed 's/server_name//' | tr -d ';' | xargs)
+      echo "  - $domain"
+      echo "    Aliases: $current_aliases"
+      sites+=("$domain")
+    fi
+  done
+  
+  if [ ${#sites[@]} -eq 0 ]; then
+    log_error "❌ Không tìm thấy site nào"
+    return 1
+  fi
+  
+  echo ""
+  
+  # Input primary domain
+  if $use_gum; then
+    primary_domain=$(gum input --placeholder "Nhập domain chính (vd: example.com)")
+  else
+    read -p "Nhập domain chính: " primary_domain
+  fi
+  
+  if [ -z "$primary_domain" ]; then
+    log_error "❌ Domain không được để trống"
+    return 1
+  fi
+  
+  # Check if site exists
+  if [ ! -f "/etc/nginx/sites-available/$primary_domain.conf" ]; then
+    log_error "❌ Site $primary_domain không tồn tại"
+    return 1
+  fi
+  
+  # Show current aliases
+  current_server_names=$(grep "server_name" "/etc/nginx/sites-available/$primary_domain.conf" | head -1 | sed 's/server_name//' | tr -d ';' | xargs)
+  echo "📊 Server names hiện tại: $current_server_names"
+  echo ""
+  
+  # Input new aliases
+  if $use_gum; then
+    new_aliases=$(gum input --placeholder "Nhập aliases mới (cách nhau bằng space, vd: www.example.com api.example.com)")
+  else
+    read -p "Nhập aliases mới (cách nhau bằng space): " new_aliases
+  fi
+  
+  if [ -z "$new_aliases" ]; then
+    log_error "❌ Aliases không được để trống"
+    return 1
+  fi
+  
+  # Backup config
+  cp "/etc/nginx/sites-available/$primary_domain.conf" "/etc/nginx/sites-available/$primary_domain.conf.bak"
+  
+  # Update server_name directive
+  log_info "🔄 Đang cập nhật Nginx config..."
+  
+  # Combine old and new aliases
+  all_aliases="$current_server_names $new_aliases"
+  
+  # Replace server_name line
+  sed -i "0,/server_name.*/ s/server_name.*/    server_name $all_aliases;/" "/etc/nginx/sites-available/$primary_domain.conf"
+  
+  # Test Nginx config
+  if ! nginx -t &>/dev/null; then
+    log_error "❌ Nginx config có lỗi, rollback..."
+    mv "/etc/nginx/sites-available/$primary_domain.conf.bak" "/etc/nginx/sites-available/$primary_domain.conf"
+    return 1
+  fi
+  
+  # Reload Nginx
+  systemctl reload nginx
+  
+  # Remove backup
+  rm -f "/etc/nginx/sites-available/$primary_domain.conf.bak"
+  
+  echo ""
   log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info "✅ ĐÃ THÊM ALIASES THÀNH CÔNG!"
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info "🌐 Site chính: $primary_domain"
+  log_info "🔗 Tất cả domains:"
+  for alias in $all_aliases; do
+    log_info "   - $alias"
+  done
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info "💡 Nhớ trỏ DNS của các aliases về IP server!"
 }
