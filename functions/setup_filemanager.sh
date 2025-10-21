@@ -24,13 +24,19 @@ install_filemanager() {
   fi
   
   # Initialize filebrowser database
-  cd /opt/filebrowser
-  filebrowser config init &>/dev/null
-  filebrowser config set --port $PORT &>/dev/null
-  filebrowser config set --root /var/www &>/dev/null
+  mkdir -p /etc/filebrowser
+  cd /etc/filebrowser
+  
+  # Init config database
+  filebrowser config init --database /etc/filebrowser/filebrowser.db
+  
+  # Configure filebrowser
+  filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --log /var/log/filebrowser.log --database /etc/filebrowser/filebrowser.db
 
   # Tạo user mặc định
-  filebrowser users add $USER $PASS --perm.admin &>/dev/null
+  filebrowser users add $USER $PASS --perm.admin --database /etc/filebrowser/filebrowser.db
 
   # Tạo service systemd
   cat > /etc/systemd/system/filebrowser.service <<EOF
@@ -40,8 +46,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/opt/filebrowser
-ExecStart=/usr/local/bin/filebrowser -p $PORT -r /var/www
+WorkingDirectory=/etc/filebrowser
+ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
 Restart=always
 
 [Install]
