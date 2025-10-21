@@ -10,7 +10,7 @@
 #   - Ghi log hoạt động vào /var/log/autoupdate.log
 # ============================================================
 
-BASE_DIR=$(dirname "$(realpath "$0")")/..
+BASE_DIR=$(dirname "$(realpath "$0")")/
 LOG_FILE="/var/log/autoupdate.log"
 BACKUP_DIR="/opt/backups/script"
 VERSION_FILE="$BASE_DIR/version.txt"

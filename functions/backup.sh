@@ -11,7 +11,7 @@
 #   - Giữ lại X ngày gần nhất
 # ============================================================
 
-BASE_DIR=$(dirname "$(realpath "$0")")/../..
+BASE_DIR=$(dirname "$(realpath "$0")")/
 LOG_FILE="/var/log/backup_vps.log"
 BACKUP_ROOT="/opt/backups/sites"
 DB_BACKUP_DIR="/opt/backups/mysql"
