@@ -69,7 +69,7 @@ wait_for_apt() {
 }
 
 # === YAML PARSER ===
-# Improved YAML parser with better error handling
+# Simple and robust YAML parser
 # Usage: parse_yaml config.yml "CONFIG_"
 parse_yaml() {
   local yaml_file=$1
@@ -80,28 +80,42 @@ parse_yaml() {
     return 1
   fi
   
-  local s='[[:space:]]*' w='[a-zA-Z0-9_]*' fs
-  fs=$(echo @|tr @ '\034')
-  
-  sed -ne "s|^\($s\):|\1|" \
-      -e "s|^\($s\)\($w\)$s:$s\"\(.*\)\"$s\$|\1$fs\2$fs\3|p" \
-      -e "s|^\($s\)\($w\)$s:$s\(.*\)$s\$|\1$fs\2$fs\3|p" "$yaml_file" |
-  awk -F"$fs" '{
-    indent = length($1)/2;
-    vname[indent] = $2;
-    for (i in vname) if (i > indent) delete vname[i];
-    if (length($3) > 0) {
-      vn=""; for (i=0; i<indent; i++) vn=(vn)(vname[i])("_");
-      printf("export %s%s%s=\"%s\"\n", "'"$prefix"'", vn, $2, $3);
-    }
-  }' | bash
+  # Read config file line by line
+  while IFS=: read -r key value; do
+    # Skip empty lines and comments
+    [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+    
+    # Clean key (remove leading/trailing spaces)
+    key=$(echo "$key" | xargs)
+    
+    # Clean value (remove leading/trailing spaces and quotes)
+    value=$(echo "$value" | xargs | sed 's/^"//;s/"$//')
+    
+    # Skip if key is empty or contains invalid characters
+    [[ -z "$key" || ! "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] && continue
+    
+    # Skip if value is empty
+    [[ -z "$value" ]] && continue
+    
+    # Export variable
+    export "${prefix}${key}"="$value"
+    
+  done < <(grep -v '^[[:space:]]*#' "$yaml_file" | grep ':')
 }
 
-# Read single value from YAML
+# Alternative: Read single value from YAML
 read_yaml_value() {
   local file=$1
   local key=$2
-  grep "^${key}:" "$file" | head -n1 | cut -d':' -f2- | xargs
+  local default=$3
+  
+  if [ ! -f "$file" ]; then
+    echo "$default"
+    return
+  fi
+  
+  local value=$(grep "^${key}:" "$file" | head -n1 | cut -d':' -f2- | xargs | sed 's/^"//;s/"$//')
+  echo "${value:-$default}"
 }
 
 # === GUM INSTALLATION ===

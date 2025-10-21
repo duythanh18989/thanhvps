@@ -5,8 +5,8 @@
 
 install_filemanager() {
   local PORT=${CONFIG_filemanager_port:-8080}
-  local USER="admin"
-  local PASS=$(random_password)
+  local USER=${CONFIG_filemanager_username:-admin}
+  local PASS=$(random_password 16)
 
   log_info "Đang cài FileBrowser..."
 
@@ -15,10 +15,10 @@ install_filemanager() {
   mkdir -p /var/www
 
   # Tải và cài đặt FileBrowser (binary vào /usr/local/bin)
-  curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash >/dev/null
+  curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash &>/dev/null
 
   # Kiểm tra file binary
-  if ! command -v filebrowser >/dev/null 2>&1; then
+  if ! command_exists filebrowser; then
     log_error "❌ FileBrowser binary không tồn tại. Cài đặt thất bại."
     return 1
   fi
@@ -43,7 +43,7 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable filebrowser
+  systemctl enable filebrowser &>/dev/null
   systemctl start filebrowser
 
   echo "filebrowser_user=$USER" >> "$BASE_DIR/logs/install.log"
