@@ -28,7 +28,7 @@ parse_yaml "$CONFIG_FILE" "CONFIG_"
 echo "✅ Đã load cấu hình mặc định từ config.yml"
 
 # --- Kiểm tra OS ---
-check_os
+#check_os
 
 # --- Cài gum (nếu có thể) ---
 check_gum
