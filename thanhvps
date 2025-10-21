@@ -24,11 +24,19 @@ elif [ -f "$HOME/thanhvps/functions/menu.sh" ]; then
   BASE_DIR="$HOME/thanhvps"
 elif [ -f "/root/thanhvps/functions/menu.sh" ]; then
   BASE_DIR="/root/thanhvps"
-elif [ -f "/home/*/thanhvps/functions/menu.sh" ]; then
-  BASE_DIR="$(dirname "$(find /home -name "thanhvps" -type d -path "*/thanhvps" 2>/dev/null | head -1)")"
 else
-  # Last resort: check current directory
-  if [ -f "$(pwd)/functions/menu.sh" ]; then
+  # Search in /home/*/thanhvps
+  found_dir=$(find /home -maxdepth 2 -type d -name "thanhvps" 2>/dev/null | while read dir; do
+    if [ -f "$dir/functions/menu.sh" ]; then
+      echo "$dir"
+      break
+    fi
+  done)
+  
+  if [ -n "$found_dir" ]; then
+    BASE_DIR="$found_dir"
+  elif [ -f "$(pwd)/functions/menu.sh" ]; then
+    # Last resort: current directory
     BASE_DIR="$(pwd)"
   else
     echo "❌ Cannot find ThanhTV VPS installation!"
@@ -37,8 +45,9 @@ else
     echo "  - /opt/thanhvps"
     echo "  - $HOME/thanhvps"
     echo "  - /root/thanhvps"
+    echo "  - /home/*/thanhvps"
     echo ""
-    echo "Please cd to thanhvps directory and run: bash install.sh"
+    echo "Run this to fix: ln -sf \$INSTALL_PATH/thanhvps /usr/local/bin/thanhvps"
     exit 1
   fi
 fi
