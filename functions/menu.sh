@@ -79,7 +79,7 @@ show_main_menu() {
     local redis_status="❌"
     
     command_exists nginx && service_is_active nginx && nginx_status="✅"
-    command_exists php8.2-fpm && service_is_active php8.2-fpm && php_status="✅"
+    service_is_active php8.2-fpm && php_status="✅"
     command_exists mysql && service_is_active mariadb && mysql_status="✅"
     command_exists redis-server && service_is_active redis-server && redis_status="✅"
     
