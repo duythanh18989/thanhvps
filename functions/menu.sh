@@ -964,16 +964,112 @@ install_ssl() {
     apt-get install -y certbot python3-certbot-nginx
   fi
   
-  # Request SSL
-  log_info "Request SSL certificate từ Let's Encrypt..."
-  if certbot --nginx -d "$domain" -d "www.$domain" --non-interactive --agree-tos --email "admin@$domain" --redirect; then
-    log_info "✅ SSL đã được cài đặt thành công cho $domain"
-    log_info "🔒 HTTPS: https://$domain"
+  # Find the config file for this domain
+  local config_file=""
+  local primary_domain=""
+  
+  # Check if domain has its own config
+  if [ -f "/etc/nginx/sites-available/$domain.conf" ]; then
+    config_file="/etc/nginx/sites-available/$domain.conf"
+    primary_domain="$domain"
   else
-    log_error "❌ Không thể cài SSL. Kiểm tra:"
-    log_error "  1. Domain đã trỏ đúng IP chưa?"
-    log_error "  2. Website/vhost đã tạo chưa?"
-    log_error "  3. Port 80 có accessible từ internet không?"
+    # Search for domain in all configs (might be an alias)
+    for conf in /etc/nginx/sites-available/*.conf; do
+      if [ -f "$conf" ] && grep -q "server_name.*$domain" "$conf"; then
+        config_file="$conf"
+        primary_domain=$(basename "$conf" .conf)
+        log_info "📋 Tìm thấy domain trong config: $primary_domain"
+        break
+      fi
+    done
+  fi
+  
+  if [ -z "$config_file" ]; then
+    log_error "❌ Không tìm thấy Nginx config cho domain: $domain"
+    log_error "   Vui lòng tạo website trước khi cài SSL"
+    return 1
+  fi
+  
+  # Get all domains from server_name directive
+  local all_domains=$(grep "server_name" "$config_file" | head -1 | sed 's/server_name//' | tr -d ';' | xargs)
+  
+  log_info "📋 Domains trong config:"
+  for d in $all_domains; do
+    log_info "   - $d"
+  done
+  
+  # Build certbot command with all domains
+  local certbot_domains=""
+  for d in $all_domains; do
+    certbot_domains="$certbot_domains -d $d"
+  done
+  
+  # Request SSL certificate only (certonly mode)
+  log_info "🔐 Request SSL certificate từ Let's Encrypt..."
+  if certbot certonly --nginx $certbot_domains --non-interactive --agree-tos --email "admin@$primary_domain"; then
+    log_info "✅ Certificate issued thành công!"
+    
+    # Manually configure SSL in Nginx
+    log_info "🔧 Đang cấu hình SSL trong Nginx..."
+    
+    # Backup config
+    cp "$config_file" "${config_file}.bak"
+    
+    # Get first domain for cert path
+    local cert_domain=$(echo $all_domains | awk '{print $1}')
+    
+    # Update config to add SSL
+    # Check if SSL already configured
+    if ! grep -q "listen 443 ssl" "$config_file"; then
+      # Add SSL server block
+      sed -i "/listen 80;/a\    listen 443 ssl http2;\n    ssl_certificate /etc/letsencrypt/live/$cert_domain/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/$cert_domain/privkey.pem;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;" "$config_file"
+      
+      # Add HTTP to HTTPS redirect
+      cat >> "$config_file" <<EOF
+
+# HTTP to HTTPS redirect
+server {
+    listen 80;
+    server_name $all_domains;
+    return 301 https://\$host\$request_uri;
+}
+EOF
+    else
+      log_info "ℹ️  SSL đã được cấu hình trước đó, chỉ cập nhật certificate"
+    fi
+    
+    # Test nginx config
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx
+      rm -f "${config_file}.bak"
+      
+      echo ""
+      log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      log_info "✅ SSL ĐÃ ĐƯỢC CÀI ĐẶT THÀNH CÔNG!"
+      log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      log_info "🔒 HTTPS URLs:"
+      for d in $all_domains; do
+        log_info "   - https://$d"
+      done
+      log_info "📜 Certificate: /etc/letsencrypt/live/$cert_domain/"
+      log_info "📅 Expires: $(date -d "+90 days" +%Y-%m-%d)"
+      log_info "🔄 Auto-renew: Enabled"
+      log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+      log_error "❌ Nginx config có lỗi, rollback..."
+      mv "${config_file}.bak" "$config_file"
+      systemctl reload nginx
+      return 1
+    fi
+  else
+    log_error "❌ Không thể issue certificate. Kiểm tra:"
+    log_error "  1. Domain đã trỏ đúng IP chưa? (DNS A record)"
+    log_error "  2. Port 80 có accessible từ internet không? (Firewall)"
+    log_error "  3. Nginx đang chạy và serving domain không?"
+    echo ""
+    log_info "💡 Test DNS: dig +short $domain"
+    log_info "💡 Test HTTP: curl -I http://$domain"
+    return 1
   fi
 }
 
