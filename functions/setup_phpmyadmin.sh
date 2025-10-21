@@ -332,41 +332,51 @@ reset_mysql_root_password() {
   
   log_info "🔄 Đang dừng MySQL service..."
   systemctl stop mariadb
+  sleep 2
+  
+  # Make sure all mysql processes are stopped
+  pkill -9 mysqld 2>/dev/null
+  pkill -9 mariadbd 2>/dev/null
+  sleep 2
   
   log_info "🔄 Khởi động MySQL ở safe mode..."
   
-  # Start MySQL in safe mode
-  mysqld_safe --skip-grant-tables --skip-networking &
+  # Create temporary init file for password reset
+  TMP_INIT_FILE="/tmp/mysql_init_$(date +%s).sql"
+  cat > "$TMP_INIT_FILE" <<EOF
+FLUSH PRIVILEGES;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${new_password}';
+FLUSH PRIVILEGES;
+EOF
+  
+  # Start MySQL with init file
+  mysqld_safe --init-file="$TMP_INIT_FILE" &
   SAFE_PID=$!
   
-  # Wait for MySQL to start
-  sleep 5
+  log_info "🔄 Đang chờ MySQL khởi động và reset mật khẩu..."
   
-  log_info "🔄 Đang reset mật khẩu root..."
+  # Wait for MySQL to complete initialization
+  sleep 8
   
-  # Reset password
-  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
-  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${new_password}';" 2>/dev/null || {
-    # Try old method for older MySQL versions
-    mysql -e "UPDATE mysql.user SET Password=PASSWORD('${new_password}') WHERE User='root';" 2>/dev/null
-    mysql -e "UPDATE mysql.user SET authentication_string=PASSWORD('${new_password}') WHERE User='root';" 2>/dev/null
-  }
-  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
-  
-  # Kill safe mode MySQL
+  # Stop safe mode MySQL
   log_info "🔄 Dừng safe mode..."
   kill $SAFE_PID 2>/dev/null
   sleep 2
   
-  # Make sure all mysql processes are stopped
-  killall mysqld 2>/dev/null
-  sleep 2
+  # Force kill all mysql processes
+  pkill -9 mysqld 2>/dev/null
+  pkill -9 mariadbd 2>/dev/null
+  pkill -9 mysqld_safe 2>/dev/null
+  sleep 3
+  
+  # Clean up temp file
+  rm -f "$TMP_INIT_FILE"
   
   # Start MySQL normally
   log_info "🔄 Khởi động MySQL bình thường..."
   systemctl start mariadb
   
-  sleep 3
+  sleep 5
   
   # Test new password
   if mysql -uroot -p"$new_password" -e "SELECT 1;" &>/dev/null; then
