@@ -34,6 +34,7 @@ install_filemanager() {
   filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
   filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
   filebrowser config set --log /var/log/filebrowser.log --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --auth.min-password-length 6 --database /etc/filebrowser/filebrowser.db
 
   # Tạo user mặc định
   filebrowser users add $USER $PASS --perm.admin --database /etc/filebrowser/filebrowser.db
@@ -104,6 +105,7 @@ reconfigure_filemanager() {
   cd /etc/filebrowser
   filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
   filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --auth.min-password-length 6 --database /etc/filebrowser/filebrowser.db
   
   # Update systemd service
   cat > /etc/systemd/system/filebrowser.service <<EOF
