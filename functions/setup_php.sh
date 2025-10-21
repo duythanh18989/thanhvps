@@ -56,7 +56,6 @@ install_php() {
     "xml"
     "zip"
     "bcmath"
-    "json"
     "intl"
     "soap"
     "imagick"

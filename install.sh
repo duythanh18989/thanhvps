@@ -177,13 +177,13 @@ if [ "${CONFIG_nodejs_enabled}" = "true" ] && command_exists node; then
 fi
 
 if [ "${CONFIG_filemanager_enabled}" = "true" ] && service_is_active filebrowser; then
-  local filebrowser_ip=$(hostname -I | awk '{print $1}')
-  local filebrowser_port=${CONFIG_filemanager_port}
+  filebrowser_ip=$(hostname -I | awk '{print $1}')
+  filebrowser_port=${CONFIG_filemanager_port}
   echo "📂 File Manager: http://${filebrowser_ip}:${filebrowser_port}"
   
   # Get credentials from log
-  local fb_user=$(grep "filebrowser_user=" "$BASE_DIR/logs/install.log" | tail -1 | cut -d'=' -f2)
-  local fb_pass=$(grep "filebrowser_pass=" "$BASE_DIR/logs/install.log" | tail -1 | cut -d'=' -f2)
+  fb_user=$(grep "filebrowser_user=" "$BASE_DIR/logs/install.log" | tail -1 | cut -d'=' -f2)
+  fb_pass=$(grep "filebrowser_pass=" "$BASE_DIR/logs/install.log" | tail -1 | cut -d'=' -f2)
   echo "   User: $fb_user | Pass: $fb_pass"
 fi
 
