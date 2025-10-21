@@ -737,10 +737,31 @@ show_filemanager_info() {
     echo "✅ Status: Running"
     echo "🌐 URL: http://${fb_ip}:${fb_port}"
     echo ""
-    echo "👤 Users:"
-    filebrowser users ls --database /etc/filebrowser/filebrowser.db 2>/dev/null || echo "  Cannot list users"
+    
+    # Get credentials from log
+    echo "👤 Login Credentials:"
+    local fb_user=$(grep "filebrowser_user=" "$BASE_DIR/logs/install.log" 2>/dev/null | tail -1 | cut -d'=' -f2)
+    local fb_pass=$(grep "filebrowser_pass=" "$BASE_DIR/logs/install.log" 2>/dev/null | tail -1 | cut -d'=' -f2)
+    
+    if [ -n "$fb_user" ] && [ -n "$fb_pass" ]; then
+      echo "  Username: $fb_user"
+      echo "  Password: $fb_pass"
+    else
+      echo "  Credentials not found in logs"
+      echo "  Try resetting password via menu option 4"
+    fi
+    
+    echo ""
+    echo "📊 Statistics:"
+    echo "  Database: /etc/filebrowser/filebrowser.db"
+    if [ -f "/etc/filebrowser/filebrowser.db" ]; then
+      local db_size=$(du -h /etc/filebrowser/filebrowser.db | awk '{print $1}')
+      echo "  DB Size: $db_size"
+    fi
   else
     echo "❌ FileBrowser is not running"
+    echo ""
+    echo "Start it via menu option 2"
   fi
   echo ""
 }
