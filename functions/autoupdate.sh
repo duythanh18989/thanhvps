@@ -18,7 +18,7 @@ VERSION_FILE="$BASE_DIR/version.txt"
 # ------------------------------------------------------------
 # ⚙️ CONFIG GITHUB (chỉnh theo repo thật của anh)
 # ------------------------------------------------------------
-GITHUB_REPO="https://raw.githubusercontent.com/thanh-tvofficial/thanhvps/main"
+GITHUB_REPO="https://raw.githubusercontent.com/duythanh18989/thanhvps/main"
 REMOTE_VERSION_URL="$GITHUB_REPO/version.txt"
 
 # ------------------------------------------------------------
