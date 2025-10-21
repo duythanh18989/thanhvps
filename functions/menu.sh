@@ -241,18 +241,20 @@ show_deploy_menu() {
       "2  Deploy PHP Website (Laravel/WordPress)" \
       "3  Danh sach websites da deploy" \
       "4  Doi PHP version cho site" \
-      "5  Xoa website da deploy" \
-      "6  Quan ly NodeJS (PM2/Versions)" \
-      "7  Quay lai")
+      "5  Fix permissions cho website" \
+      "6  Xoa website da deploy" \
+      "7  Quan ly NodeJS (PM2/Versions)" \
+      "8  Quay lai")
   else
     choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 20 70 10 \
       "1" "Deploy NodeJS App" \
       "2" "Deploy PHP Website" \
       "3" "Danh sach websites" \
       "4" "Doi PHP version" \
-      "5" "Xoa website" \
-      "6" "Quan ly NodeJS" \
-      "7" "Quay lai" 3>&1 1>&2 2>&3)
+      "5" "Fix permissions" \
+      "6" "Xoa website" \
+      "7" "Quan ly NodeJS" \
+      "8" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -262,9 +264,10 @@ show_deploy_menu() {
     2) deploy_php_website; read -p "Press Enter to continue..."; show_deploy_menu ;;
     3) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
     4) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    5) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    6) show_nodejs_menu; show_deploy_menu ;;
-    7|"") show_main_menu ;;
+    5) fix_site_permissions; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    6) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    7) show_nodejs_menu; show_deploy_menu ;;
+    8|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_deploy_menu ;;
   esac
 }
@@ -440,16 +443,18 @@ show_filemanager_menu() {
       "2  Start/Stop FileBrowser" \
       "3  Thêm user mới" \
       "4  Đổi mật khẩu admin" \
-      "5  Xem thông tin truy cập" \
-      "6  Quay lại")
+      "5  Fix permissions (chuyển sang www-data)" \
+      "6  Xem thông tin truy cập" \
+      "7  Quay lại")
   else
     choice=$(whiptail --title "File Manager" --menu "Chon tac vu:" 20 70 10 \
       "1" "Cai dat FileBrowser" \
       "2" "Start/Stop service" \
       "3" "Them user moi" \
       "4" "Doi mat khau" \
-      "5" "Xem thong tin" \
-      "6" "Quay lai" 3>&1 1>&2 2>&3)
+      "5" "Fix permissions" \
+      "6" "Xem thong tin" \
+      "7" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -459,8 +464,9 @@ show_filemanager_menu() {
     2) toggle_filemanager; read -p "Press Enter to continue..."; show_filemanager_menu ;;
     3) add_filemanager_user; read -p "Press Enter to continue..."; show_filemanager_menu ;;
     4) change_filemanager_password; read -p "Press Enter to continue..."; show_filemanager_menu ;;
-    5) show_filemanager_info; read -p "Press Enter to continue..."; show_filemanager_menu ;;
-    6|"") show_main_menu ;;
+    5) fix_filemanager_user; read -p "Press Enter to continue..."; show_filemanager_menu ;;
+    6) show_filemanager_info; read -p "Press Enter to continue..."; show_filemanager_menu ;;
+    7|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_filemanager_menu ;;
   esac
 }

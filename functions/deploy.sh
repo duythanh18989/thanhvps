@@ -229,8 +229,17 @@ EOF
   fi
   
   # Set permissions
+  log_info "🔐 Cài đặt permissions..."
   chown -R www-data:www-data "$SITE_DIR"
-  chmod -R 755 "$SITE_DIR"
+  find "$SITE_DIR" -type d -exec chmod 755 {} \;
+  find "$SITE_DIR" -type f -exec chmod 644 {} \;
+  
+  # Set writable directories for Laravel/CodeIgniter
+  for wdir in storage writable bootstrap/cache uploads cache; do
+    if [ -d "$SITE_DIR/$wdir" ]; then
+      chmod -R 775 "$SITE_DIR/$wdir"
+    fi
+  done
   
   # Create Nginx config
   log_info "🔧 Cấu hình Nginx..."
@@ -509,7 +518,130 @@ change_site_php_version() {
   log_info "✅ ĐÃ ĐỔI PHP VERSION THÀNH CÔNG!"
   log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   log_info "🌐 Site: $domain"
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   log_info "🐘 PHP cũ: ${current_php:-unknown}"
   log_info "🐘 PHP mới: $new_version"
+  log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# Fix permissions for website
+fix_site_permissions() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔐 SỬA PERMISSIONS CHO WEBSITE"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # List sites
+  if [ ! -d "/var/www" ]; then
+    log_error "❌ Thư mục /var/www không tồn tại"
+    return 1
+  fi
+  
+  echo "📋 Danh sách websites trong /var/www:"
+  local sites=()
+  for dir in /var/www/*/; do
+    if [ -d "$dir" ]; then
+      site=$(basename "$dir")
+      owner=$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "unknown")
+      echo "  - $site (owner: $owner)"
+      sites+=("$site")
+    fi
+  done
+  
+  if [ ${#sites[@]} -eq 0 ]; then
+    log_error "❌ Không tìm thấy website nào"
+    return 1
+  fi
+  
+  echo ""
+  
+  # Input domain
+  if $use_gum; then
+    domain=$(gum input --placeholder "Nhập domain cần fix permissions (hoặc 'all' để fix tất cả)")
+  else
+    read -p "Nhập domain (hoặc 'all' để fix tất cả): " domain
+  fi
+  
+  if [ -z "$domain" ]; then
+    log_error "❌ Domain không được để trống"
+    return 1
+  fi
+  
+  # Fix permissions function
+  fix_perms_for_site() {
+    local site_path=$1
+    local site_name=$2
+    
+    log_info "🔧 Đang fix permissions cho: $site_name"
+    
+    # Set owner to www-data:www-data
+    chown -R www-data:www-data "$site_path"
+    
+    # Set directory permissions to 755
+    find "$site_path" -type d -exec chmod 755 {} \;
+    
+    # Set file permissions to 644
+    find "$site_path" -type f -exec chmod 644 {} \;
+    
+    # Special permissions for writable directories (if exist)
+    local writable_dirs=(
+      "storage"
+      "storage/logs"
+      "storage/framework"
+      "storage/framework/cache"
+      "storage/framework/sessions"
+      "storage/framework/views"
+      "bootstrap/cache"
+      "writable"
+      "uploads"
+      "cache"
+      "tmp"
+    )
+    
+    for wdir in "${writable_dirs[@]}"; do
+      if [ -d "$site_path/$wdir" ]; then
+        chmod -R 775 "$site_path/$wdir"
+        log_info "  ✅ Đã set 775 cho: $wdir"
+      fi
+    done
+    
+    # Make shell scripts executable (if exist)
+    find "$site_path" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null
+    
+    log_info "✅ Hoàn thành: $site_name"
+  }
+  
+  # Execute
+  if [ "$domain" = "all" ]; then
+    log_info "🔄 Đang fix permissions cho TẤT CẢ websites..."
+    echo ""
+    
+    for site in "${sites[@]}"; do
+      fix_perms_for_site "/var/www/$site" "$site"
+      echo ""
+    done
+    
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ ĐÃ FIX TẤT CẢ WEBSITES!"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  else
+    if [ ! -d "/var/www/$domain" ]; then
+      log_error "❌ Website $domain không tồn tại"
+      return 1
+    fi
+    
+    fix_perms_for_site "/var/www/$domain" "$domain"
+    
+    echo ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ ĐÃ FIX PERMISSIONS!"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "🌐 Website: $domain"
+    log_info "📁 Path: /var/www/$domain"
+    log_info "👤 Owner: www-data:www-data"
+    log_info "📋 Dirs: 755 | Files: 644 | Writable: 775"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  fi
+}
   log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
