@@ -411,18 +411,42 @@ restart_mysql_service() {
     echo "📊 Trạng thái hiện tại: ✅ Đang chạy"
   else
     echo "📊 Trạng thái hiện tại: ❌ Đã dừng"
+    echo ""
+    log_warn "⚠️  MariaDB đang không chạy. Kiểm tra lỗi..."
+    echo ""
+    
+    # Check for common issues
+    if [ -f "/var/lib/mysql/mysql.sock.lock" ]; then
+      log_warn "🔧 Phát hiện lock file, đang xóa..."
+      rm -f /var/lib/mysql/*.lock
+    fi
+    
+    # Check PID file
+    if [ -f "/var/run/mysqld/mysqld.pid" ]; then
+      log_warn "🔧 Phát hiện PID file cũ, đang xóa..."
+      rm -f /var/run/mysqld/mysqld.pid
+    fi
+    
+    # Kill any remaining MySQL processes
+    if pgrep -x mysqld > /dev/null; then
+      log_warn "🔧 Phát hiện process MySQL cũ, đang dọn dẹp..."
+      pkill -9 mysqld 2>/dev/null
+      pkill -9 mariadbd 2>/dev/null
+      sleep 2
+    fi
   fi
   echo ""
   
   if $use_gum; then
-    action=$(gum choose "Restart" "Start" "Stop" "Status" "Hủy")
+    action=$(gum choose "Restart" "Start" "Stop" "Status" "Fix & Restart" "Hủy")
   else
     echo "Chọn hành động:"
     echo "1) Restart"
     echo "2) Start"
     echo "3) Stop"
     echo "4) Status"
-    echo "5) Hủy"
+    echo "5) Fix & Restart (Sửa lỗi)"
+    echo "6) Hủy"
     read -p "Chọn [1]: " choice
     choice=${choice:-1}
     case "$choice" in
@@ -430,6 +454,7 @@ restart_mysql_service() {
       2) action="Start" ;;
       3) action="Stop" ;;
       4) action="Status" ;;
+      5) action="Fix & Restart" ;;
       *) action="Hủy" ;;
     esac
   fi
@@ -437,6 +462,53 @@ restart_mysql_service() {
   echo ""
   
   case "$action" in
+    "Fix & Restart")
+      log_info "🔧 Đang sửa lỗi và restart MariaDB..."
+      
+      # Stop service completely
+      systemctl stop mariadb 2>/dev/null
+      sleep 2
+      
+      # Kill all processes
+      pkill -9 mysqld 2>/dev/null
+      pkill -9 mariadbd 2>/dev/null
+      pkill -9 mysqld_safe 2>/dev/null
+      sleep 2
+      
+      # Remove lock files
+      rm -f /var/lib/mysql/*.lock
+      rm -f /var/run/mysqld/mysqld.pid
+      rm -f /var/lib/mysql/*.pid
+      
+      # Check disk space
+      local disk_usage=$(df /var/lib/mysql | tail -1 | awk '{print $5}' | tr -d '%')
+      if [ "$disk_usage" -gt 90 ]; then
+        log_error "❌ Ổ đĩa đầy (${disk_usage}%). Cần giải phóng dung lượng!"
+        return 1
+      fi
+      
+      # Check permissions
+      chown -R mysql:mysql /var/lib/mysql
+      chmod 750 /var/lib/mysql
+      
+      # Try to start
+      log_info "🔄 Đang khởi động MariaDB..."
+      systemctl start mariadb
+      sleep 5
+      
+      if systemctl is-active --quiet mariadb; then
+        log_info "✅ MariaDB đã start thành công sau khi fix!"
+      else
+        log_error "❌ Không thể start MariaDB sau khi fix"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📋 LOG LỖI (10 dòng cuối):"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        journalctl -xeu mariadb.service --no-pager | tail -20
+        return 1
+      fi
+      ;;
+    
     "Restart")
       log_info "🔄 Đang restart MariaDB..."
       systemctl restart mariadb
@@ -446,6 +518,8 @@ restart_mysql_service() {
       else
         log_error "❌ Không thể restart MariaDB"
         echo "Xem log: journalctl -xeu mariadb.service"
+        echo ""
+        log_warn "💡 Thử dùng option 'Fix & Restart'"
         return 1
       fi
       ;;
@@ -459,6 +533,8 @@ restart_mysql_service() {
       else
         log_error "❌ Không thể start MariaDB"
         echo "Xem log: journalctl -xeu mariadb.service"
+        echo ""
+        log_warn "💡 Thử dùng option 'Fix & Restart'"
         return 1
       fi
       ;;
