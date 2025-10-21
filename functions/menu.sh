@@ -663,7 +663,15 @@ show_php_info() {
 
 # FileBrowser functions
 install_filemanager() {
-  bash "$BASE_DIR/functions/setup_filemanager.sh"
+  source "$BASE_DIR/functions/setup_filemanager.sh"
+  
+  if command_exists filebrowser && [ -f "/etc/filebrowser/filebrowser.db" ]; then
+    log_warn "FileBrowser đã được cài đặt"
+    read -p "Bạn có muốn cài lại không? (y/n): " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || return 0
+  fi
+  
+  install_filemanager
 }
 
 toggle_filemanager() {
@@ -671,8 +679,16 @@ toggle_filemanager() {
     systemctl stop filebrowser
     log_info "✅ FileBrowser stopped"
   else
-    systemctl start filebrowser
-    log_info "✅ FileBrowser started"
+    # Check if configured correctly
+    if netstat -tlnp 2>/dev/null | grep -q "127.0.0.1:8080"; then
+      log_warn "⚠️  FileBrowser đang listen trên 127.0.0.1 (localhost only)"
+      log_info "Đang reconfigure để accessible từ internet..."
+      source "$BASE_DIR/functions/setup_filemanager.sh"
+      reconfigure_filemanager
+    else
+      systemctl start filebrowser
+      log_info "✅ FileBrowser started"
+    fi
   fi
 }
 

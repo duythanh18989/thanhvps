@@ -65,3 +65,65 @@ EOF
   log_info "   User: $USER | Pass: $PASS"
 }
 
+# Reconfigure existing FileBrowser to listen on 0.0.0.0
+reconfigure_filemanager() {
+  log_info "Reconfiguring FileBrowser..."
+  
+  # Stop service
+  systemctl stop filebrowser 2>/dev/null
+  
+  # Create database directory
+  mkdir -p /etc/filebrowser
+  
+  # Check if old database exists
+  if [ -f "/opt/filebrowser/filebrowser.db" ]; then
+    log_info "Migrating old database..."
+    cp /opt/filebrowser/filebrowser.db /etc/filebrowser/filebrowser.db
+  fi
+  
+  # Initialize if not exists
+  if [ ! -f "/etc/filebrowser/filebrowser.db" ]; then
+    cd /etc/filebrowser
+    filebrowser config init --database /etc/filebrowser/filebrowser.db
+    
+    # Add default user
+    local USER=${CONFIG_filemanager_username:-admin}
+    local PASS=$(random_password 16)
+    filebrowser users add $USER $PASS --perm.admin --database /etc/filebrowser/filebrowser.db
+    
+    echo "filebrowser_user=$USER" >> "$BASE_DIR/logs/install.log"
+    echo "filebrowser_pass=$PASS" >> "$BASE_DIR/logs/install.log"
+    
+    log_info "✅ Created user: $USER | Pass: $PASS"
+  fi
+  
+  # Configure to listen on 0.0.0.0
+  local PORT=${CONFIG_filemanager_port:-8080}
+  filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
+  filebrowser config set --log /var/log/filebrowser.log --database /etc/filebrowser/filebrowser.db
+  
+  # Update systemd service
+  cat > /etc/systemd/system/filebrowser.service <<EOF
+[Unit]
+Description=File Browser
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/etc/filebrowser
+ExecStart=/usr/local/bin/filebrowser --database /etc/filebrowser/filebrowser.db
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  
+  # Reload and restart
+  systemctl daemon-reload
+  systemctl enable filebrowser 2>/dev/null
+  systemctl start filebrowser
+  
+  log_info "✅ FileBrowser reconfigured: http://$(hostname -I | awk '{print $1}'):$PORT"
+}
+
