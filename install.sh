@@ -13,7 +13,8 @@ fi
 
 # --- Đặt thư mục gốc của script ---
 #BASE_DIR=$(cd "$(dirname "$0")" && pwd)
-BASE_DIR="$(dirname "$0")"
+BASE_DIR="$(pwd)"
+echo "BASE_DIR=$BASE_DIR"
 
 # --- Load file utils ---
 source "$BASE_DIR/functions/utils.sh"
