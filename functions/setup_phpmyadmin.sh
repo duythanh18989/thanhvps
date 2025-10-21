@@ -392,3 +392,98 @@ EOF
     return 1
   fi
 }
+
+# Restart MySQL/MariaDB service
+restart_mysql_service() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔄 RESTART MYSQL/MARIADB SERVICE"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Check if service exists
+  if ! systemctl list-unit-files | grep -q mariadb.service; then
+    log_error "❌ MariaDB service không tồn tại"
+    return 1
+  fi
+  
+  # Check current status
+  if systemctl is-active --quiet mariadb; then
+    echo "📊 Trạng thái hiện tại: ✅ Đang chạy"
+  else
+    echo "📊 Trạng thái hiện tại: ❌ Đã dừng"
+  fi
+  echo ""
+  
+  if $use_gum; then
+    action=$(gum choose "Restart" "Start" "Stop" "Status" "Hủy")
+  else
+    echo "Chọn hành động:"
+    echo "1) Restart"
+    echo "2) Start"
+    echo "3) Stop"
+    echo "4) Status"
+    echo "5) Hủy"
+    read -p "Chọn [1]: " choice
+    choice=${choice:-1}
+    case "$choice" in
+      1) action="Restart" ;;
+      2) action="Start" ;;
+      3) action="Stop" ;;
+      4) action="Status" ;;
+      *) action="Hủy" ;;
+    esac
+  fi
+  
+  echo ""
+  
+  case "$action" in
+    "Restart")
+      log_info "🔄 Đang restart MariaDB..."
+      systemctl restart mariadb
+      sleep 2
+      if systemctl is-active --quiet mariadb; then
+        log_info "✅ MariaDB đã restart thành công!"
+      else
+        log_error "❌ Không thể restart MariaDB"
+        echo "Xem log: journalctl -xeu mariadb.service"
+        return 1
+      fi
+      ;;
+    
+    "Start")
+      log_info "🔄 Đang start MariaDB..."
+      systemctl start mariadb
+      sleep 2
+      if systemctl is-active --quiet mariadb; then
+        log_info "✅ MariaDB đã start thành công!"
+      else
+        log_error "❌ Không thể start MariaDB"
+        echo "Xem log: journalctl -xeu mariadb.service"
+        return 1
+      fi
+      ;;
+    
+    "Stop")
+      log_warn "⚠️  Đang stop MariaDB..."
+      systemctl stop mariadb
+      sleep 2
+      if ! systemctl is-active --quiet mariadb; then
+        log_info "✅ MariaDB đã stop thành công!"
+      else
+        log_error "❌ Không thể stop MariaDB"
+        return 1
+      fi
+      ;;
+    
+    "Status")
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      systemctl status mariadb --no-pager -l
+      ;;
+    
+    *)
+      log_info "❌ Đã hủy"
+      return 0
+      ;;
+  esac
+}
+

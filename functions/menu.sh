@@ -186,10 +186,11 @@ show_db_menu() {
       "6  Xem thong tin phpMyAdmin" \
       "7  Danh sach MySQL users" \
       "8  Doi mat khau MySQL user" \
-      "9  Reset mat khau MySQL root (Recovery)" \
+      "9  Restart MySQL/MariaDB service" \
+      "R  Reset mat khau MySQL root (Recovery)" \
       "0  Quay lai")
   else
-    choice=$(whiptail --title "Quan ly Database" --menu "Chon tac vu:" 20 70 12 \
+    choice=$(whiptail --title "Quan ly Database" --menu "Chon tac vu:" 22 70 13 \
       "1" "Tao database moi" \
       "2" "Xoa database" \
       "3" "Danh sach database" \
@@ -198,11 +199,12 @@ show_db_menu() {
       "6" "Xem thong tin phpMyAdmin" \
       "7" "Danh sach MySQL users" \
       "8" "Doi mat khau MySQL user" \
-      "9" "Reset mat khau MySQL root (Recovery)" \
+      "9" "Restart MySQL/MariaDB service" \
+      "R" "Reset mat khau MySQL root (Recovery)" \
       "0" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
-  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  local num=$(echo "$choice" | grep -o '^[0-9RrRr]*' | tr '[:lower:]' '[:upper:]')
   
   case "$num" in
     1) create_db; read -p "Press Enter to continue..."; show_db_menu ;;
@@ -213,7 +215,8 @@ show_db_menu() {
     6) show_phpmyadmin_info; read -p "Press Enter to continue..."; show_db_menu ;;
     7) list_mysql_users; read -p "Press Enter to continue..."; show_db_menu ;;
     8) change_mysql_password; read -p "Press Enter to continue..."; show_db_menu ;;
-    9) reset_mysql_root_password; read -p "Press Enter to continue..."; show_db_menu ;;
+    9) restart_mysql_service; read -p "Press Enter to continue..."; show_db_menu ;;
+    R) reset_mysql_root_password; read -p "Press Enter to continue..."; show_db_menu ;;
     0|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_db_menu ;;
   esac
@@ -971,6 +974,12 @@ change_mysql_password() {
 reset_mysql_root_password() {
   source "$BASE_DIR/functions/setup_phpmyadmin.sh"
   reset_mysql_root_password
+}
+
+# Restart MySQL service wrapper
+restart_mysql_service() {
+  source "$BASE_DIR/functions/setup_phpmyadmin.sh"
+  restart_mysql_service
 }
 
 # ------------------------------------------------------
