@@ -5,8 +5,9 @@
 #            có giao diện quản lý (FileBrowser) & menu gum/whiptail
 # ========================================================
 
-set -e  # Exit on error
-trap 'echo "❌ Error occurred at line $LINENO"; exit 1' ERR
+# Note: Commented out set -e to prevent script from exiting on minor errors
+# set -e  # Exit on error
+# trap 'echo "❌ Error occurred at line $LINENO"; exit 1' ERR
 
 # --- Kiểm tra quyền root ---
 if [ "$EUID" -ne 0 ]; then
@@ -51,13 +52,24 @@ log_info "Đang load cấu hình từ config.yml..."
 parse_yaml "$CONFIG_FILE" "CONFIG_"
 log_info "✅ Đã load cấu hình"
 
+# Debug: Show some config values
+if [ "${DEBUG_MODE}" = "true" ]; then
+  log_debug "default_domain: $CONFIG_default_domain"
+  log_debug "default_php: $CONFIG_default_php"
+  log_debug "redis_enabled: $CONFIG_redis_enabled"
+fi
+
 # --- Cài gum (TUI framework) ---
-check_gum
+check_gum || log_warn "Gum installation skipped"
 
 # --- Hỏi domain chính ---
 echo ""
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_info "📝 CẤU HÌNH CÀI ĐẶT"
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 read -p "👉 Nhập domain chính cho website (Enter để dùng ${CONFIG_default_domain}): " MAIN_DOMAIN
 MAIN_DOMAIN=${MAIN_DOMAIN:-${CONFIG_default_domain}}
+log_info "Domain sẽ cài: $MAIN_DOMAIN"
 
 # --- Random mật khẩu MySQL root ---
 if [ -n "$CONFIG_mysql_root_password" ] && [ "$CONFIG_mysql_root_password" != '""' ]; then
@@ -69,14 +81,15 @@ fi
 echo "mysql_root_password=$MYSQL_ROOT_PASS" >> "$BASE_DIR/logs/install.log"
 
 # --- Load các module cài đặt ---
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log_info "Loading installation modules..."
 
 for module in setup_nginx setup_php setup_mysql setup_redis setup_nodejs setup_filemanager setup_ssl; do
   if [ -f "$BASE_DIR/functions/${module}.sh" ]; then
     source "$BASE_DIR/functions/${module}.sh"
-    log_debug "Loaded: ${module}.sh"
+    log_info "✅ Loaded: ${module}.sh"
   else
-    log_warn "Module not found: ${module}.sh"
+    log_warn "⚠️  Module not found: ${module}.sh"
   fi
 done
 
@@ -87,45 +100,60 @@ log_info "🚀 BẮT ĐẦU CÀI ĐẶT..."
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # System update
-log_info "Cập nhật system packages..."
-apt-get update -y &>/dev/null || log_warn "apt-get update có warning"
+log_info "[1/9] Cập nhật system packages..."
+apt-get update -y &>/dev/null && log_info "✅ System update OK" || log_warn "⚠️  apt-get update có warning"
 
 # Install core packages
-log_info "Cài đặt dependencies cơ bản..."
-apt-get install -y curl wget git zip unzip software-properties-common &>/dev/null
+log_info "[2/9] Cài đặt dependencies cơ bản..."
+apt-get install -y curl wget git zip unzip software-properties-common &>/dev/null && log_info "✅ Dependencies OK"
 
 # Install components
 echo ""
-install_nginx "$MAIN_DOMAIN" || log_error "Nginx installation failed"
+log_info "[3/9] Cài đặt Nginx..."
+install_nginx "$MAIN_DOMAIN" && log_info "✅ Nginx OK" || log_error "❌ Nginx installation failed"
 
 echo ""
-install_php || log_error "PHP installation failed"
+log_info "[4/9] Cài đặt PHP..."
+install_php && log_info "✅ PHP OK" || log_error "❌ PHP installation failed"
 
 echo ""
-install_mysql "$MYSQL_ROOT_PASS" || log_error "MySQL installation failed"
+log_info "[5/9] Cài đặt MariaDB..."
+install_mysql "$MYSQL_ROOT_PASS" && log_info "✅ MariaDB OK" || log_error "❌ MySQL installation failed"
 
 # Optional: Redis
 if [ "${CONFIG_redis_enabled}" = "true" ]; then
   echo ""
-  install_redis || log_warn "Redis installation failed (optional)"
+  log_info "[6/9] Cài đặt Redis..."
+  install_redis && log_info "✅ Redis OK" || log_warn "⚠️  Redis installation failed (optional)"
+else
+  log_info "[6/9] Redis bỏ qua (disabled in config)"
 fi
 
 # Optional: NodeJS
 if [ "${CONFIG_nodejs_enabled}" = "true" ]; then
   echo ""
-  install_nodejs || log_warn "NodeJS installation failed (optional)"
+  log_info "[7/9] Cài đặt NodeJS..."
+  install_nodejs && log_info "✅ NodeJS OK" || log_warn "⚠️  NodeJS installation failed (optional)"
+else
+  log_info "[7/9] NodeJS bỏ qua (disabled in config)"
 fi
 
 # Optional: File Manager
 if [ "${CONFIG_filemanager_enabled}" = "true" ]; then
   echo ""
-  install_filemanager || log_warn "FileBrowser installation failed (optional)"
+  log_info "[8/9] Cài đặt FileBrowser..."
+  install_filemanager && log_info "✅ FileBrowser OK" || log_warn "⚠️  FileBrowser installation failed (optional)"
+else
+  log_info "[8/9] FileBrowser bỏ qua (disabled in config)"
 fi
 
 # Optional: SSL
 if [ "${CONFIG_ssl_auto_ssl}" = "true" ]; then
   echo ""
-  install_ssl "$MAIN_DOMAIN" || log_warn "SSL installation failed (optional)"
+  log_info "[9/9] Cài đặt SSL..."
+  install_ssl "$MAIN_DOMAIN" && log_info "✅ SSL OK" || log_warn "⚠️  SSL installation failed (optional)"
+else
+  log_info "[9/9] SSL bỏ qua (disabled in config)"
 fi
 
 # --- Tóm tắt kết quả ---

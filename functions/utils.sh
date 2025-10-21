@@ -131,20 +131,31 @@ check_gum() {
       armv7l)  ARCH="armv7" ;;
       *)
         log_warn "Kiến trúc $ARCH không được hỗ trợ, bỏ qua cài gum."
-        return 1
+        return 0
         ;;
     esac
     
-    wget -q "https://github.com/charmbracelet/gum/releases/latest/download/gum_0.13.0_${ARCH}.deb" -O /tmp/gum.deb
-    
-    if [ -f /tmp/gum.deb ]; then
-      dpkg -i /tmp/gum.deb &>/dev/null || apt-get install -f -y &>/dev/null
-      rm -f /tmp/gum.deb
-      log_info "✅ Gum đã được cài đặt"
+    # Try to download and install gum
+    local GUM_DEB="/tmp/gum_${ARCH}.deb"
+    if wget -q "https://github.com/charmbracelet/gum/releases/download/v0.13.0/gum_0.13.0_linux_${ARCH}.deb" -O "$GUM_DEB" 2>/dev/null; then
+      if [ -f "$GUM_DEB" ]; then
+        dpkg -i "$GUM_DEB" &>/dev/null || apt-get install -f -y &>/dev/null
+        rm -f "$GUM_DEB"
+        
+        if command_exists gum; then
+          log_info "✅ Gum đã được cài đặt"
+        else
+          log_warn "Không thể cài gum, sử dụng UI cơ bản."
+        fi
+      fi
     else
       log_warn "Không thể tải gum, sử dụng UI cơ bản."
     fi
+  else
+    log_info "✅ Gum đã có sẵn"
   fi
+  
+  return 0
 }
 
 # === CONFIRMATION PROMPT ===
