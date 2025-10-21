@@ -2,28 +2,55 @@
 # ======================================================
 # MENU QUAN LY VPS (Giao dien GUM / WHIPTAIL)
 # ------------------------------------------------------
-# Tac gia: ThanhTV | Phien ban: 1.5
+# Tac gia: ThanhTV | Phien ban: 2.0
 # Script ho tro menu quan ly Website, Database,
 # Backup, He thong, Auto Update.
 # ======================================================
 
-BASE_DIR="$(dirname "$(realpath "$0")")"
+# Set BASE_DIR correctly
+if [ -z "$BASE_DIR" ]; then
+  if [ -f "$(dirname "$(realpath "$0")")/../functions/utils.sh" ]; then
+    # Called from functions directory
+    BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  else
+    # Called from root directory
+    BASE_DIR="$(pwd)"
+  fi
+fi
+
 LOG_FILE="/var/log/menu_vps.log"
 
 # ------------------------------------------------------
-# Tu dong load tat ca function/module neu co
+# Load utils first (required for all modules)
+# ------------------------------------------------------
+if [ -f "$BASE_DIR/functions/utils.sh" ]; then
+  source "$BASE_DIR/functions/utils.sh"
+else
+  echo "ERROR: Cannot find utils.sh"
+  exit 1
+fi
+
+# ------------------------------------------------------
+# Load all other function modules
 # ------------------------------------------------------
 for file in "$BASE_DIR"/functions/*.sh; do
-  [ -f "$file" ] && source "$file"
+  [ -f "$file" ] && [ "$file" != "$BASE_DIR/functions/utils.sh" ] && source "$file"
 done
 
 # ------------------------------------------------------
 # Kiem tra GUM (UI dep) hay fallback WHIPTAIL
 # ------------------------------------------------------
 use_gum=false
-if command -v gum &>/dev/null; then
+if command_exists gum; then
   use_gum=true
 fi
+
+# ------------------------------------------------------
+# Main menu function
+# ------------------------------------------------------
+main_menu() {
+  show_main_menu
+}
 
 # ------------------------------------------------------
 # Menu chinh
@@ -31,7 +58,9 @@ fi
 show_main_menu() {
   if $use_gum; then
     clear
-    echo "QUAN LY VPS - Chon chuc nang:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 ThanhTV VPS - MENU QUẢN LÝ"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     choice=$(gum choose \
       "1  Quan ly Website" \
       "2  Quan ly Database" \
@@ -49,13 +78,17 @@ show_main_menu() {
       "6" "Thoat" 3>&1 1>&2 2>&3)
   fi
 
-  case "$choice" in
+  # Parse choice (extract number)
+  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  
+  case "$num" in
     1) show_website_menu ;;
     2) show_db_menu ;;
-    3) bash "$BASE_DIR/functions/backup.sh" ;;
-    4) bash "$BASE_DIR/functions/system.sh" ;;
-    5) bash "$BASE_DIR/functions/autoupdate.sh" ;;
-    6) echo "Tam biet!"; exit 0 ;;
+    3) show_backup_menu ;;
+    4) show_system_menu ;;
+    5) bash "$BASE_DIR/functions/autoupdate.sh"; read -p "Press Enter to continue..."; show_main_menu ;;
+    6|"") echo "Tam biet!"; exit 0 ;;
+    *) log_error "Lua chon khong hop le!"; sleep 1; show_main_menu ;;
   esac
 }
 
@@ -64,6 +97,10 @@ show_main_menu() {
 # ------------------------------------------------------
 show_website_menu() {
   if $use_gum; then
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🌐 QUẢN LÝ WEBSITE"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     choice=$(gum choose \
       "1  Them website moi" \
       "2  Xoa website" \
@@ -81,13 +118,16 @@ show_website_menu() {
       "6" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
-  case "$choice" in
-    1) add_website ;;
-    2) remove_website ;;
-    3) list_websites ;;
-    4) view_logs ;;
-    5) restart_nginx_php ;;
-    6) show_main_menu ;;
+  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  
+  case "$num" in
+    1) add_website; read -p "Press Enter to continue..."; show_website_menu ;;
+    2) remove_website; read -p "Press Enter to continue..."; show_website_menu ;;
+    3) list_websites; read -p "Press Enter to continue..."; show_website_menu ;;
+    4) view_logs; show_website_menu ;;
+    5) restart_nginx_php; read -p "Press Enter to continue..."; show_website_menu ;;
+    6|"") show_main_menu ;;
+    *) log_error "Lua chon khong hop le!"; sleep 1; show_website_menu ;;
   esac
 }
 
@@ -96,30 +136,67 @@ show_website_menu() {
 # ------------------------------------------------------
 show_db_menu() {
   if $use_gum; then
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🗄️  QUẢN LÝ DATABASE"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     choice=$(gum choose \
       "1  Tao database moi" \
       "2  Xoa database" \
       "3  Danh sach database" \
-      "4  Quay lai")
+      "4  Export database" \
+      "5  Quay lai")
   else
     choice=$(whiptail --title "Quan ly Database" --menu "Chon tac vu:" 20 70 10 \
       "1" "Tao database moi" \
       "2" "Xoa database" \
       "3" "Danh sach database" \
-      "4" "Quay lai" 3>&1 1>&2 2>&3)
+      "4" "Export database" \
+      "5" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
-  case "$choice" in
-    1) create_db ;;
-    2) delete_db ;;
-    3) list_db ;;
-    4) show_main_menu ;;
+  local num=$(echo "$choice" | grep -o '^[0-9]*')
+  
+  case "$num" in
+    1) create_db; read -p "Press Enter to continue..."; show_db_menu ;;
+    2) delete_db; read -p "Press Enter to continue..."; show_db_menu ;;
+    3) list_db; read -p "Press Enter to continue..."; show_db_menu ;;
+    4) export_db; read -p "Press Enter to continue..."; show_db_menu ;;
+    5|"") show_main_menu ;;
+    *) log_error "Lua chon khong hop le!"; sleep 1; show_db_menu ;;
   esac
 }
 
 # ------------------------------------------------------
-# Chay menu chinh
+# Menu: Backup
 # ------------------------------------------------------
-while true; do
+show_backup_menu() {
+  clear
+  bash "$BASE_DIR/functions/backup.sh"
+  read -p "Press Enter to continue..."
   show_main_menu
-done
+}
+
+# ------------------------------------------------------
+# Menu: System
+# ------------------------------------------------------
+show_system_menu() {
+  if command_exists show_system_menu_internal; then
+    show_system_menu_internal
+    show_main_menu
+  else
+    clear
+    bash "$BASE_DIR/functions/system.sh"
+    read -p "Press Enter to continue..."
+    show_main_menu
+  fi
+}
+
+# ------------------------------------------------------
+# Chay menu chinh - only if called directly
+# ------------------------------------------------------
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  while true; do
+    show_main_menu
+  done
+fi

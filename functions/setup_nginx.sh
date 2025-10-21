@@ -5,27 +5,203 @@
 # Tác giả: ThanhTV
 # Version: v2.0
 # Mục tiêu:
+#   - Cài đặt Nginx
 #   - Tạo / Xóa website
 #   - Tự động lấy PHP version từ config.yml (nếu user không chọn)
 #   - Cấu hình Nginx tối ưu (gzip + brotli + cache + headers)
 #   - Ghi log vào logs/install.log
 # ============================================================
 
-# 🧩 Đường dẫn cơ bản
-BASE_DIR=$(dirname "$(realpath "$0")")
+# 🧩 Đường dẫn cơ bản - nếu chưa được set từ install.sh
+if [ -z "$BASE_DIR" ]; then
+  BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 LOG_FILE="$BASE_DIR/logs/install.log"
-CONFIG_FILE="$BASE_DIR/config.yml"
 
 # ------------------------------------------------------------
-# 🔧 HÀM: Đọc giá trị từ config.yml (dạng key: value)
+# 🔧 HÀM: Đọc giá trị từ config.yml
 # ------------------------------------------------------------
 read_config() {
   local key="$1"
-  awk -F': ' -v k="$key" '$1==k {print $2}' "$CONFIG_FILE" | xargs
+  local default="$2"
+  local value
+  
+  # Try to read from exported CONFIG_ variables first
+  local var_name="CONFIG_${key}"
+  if [ -n "${!var_name}" ]; then
+    echo "${!var_name}"
+    return 0
+  fi
+  
+  # Fallback to reading from file
+  if [ -f "$BASE_DIR/config.yml" ]; then
+    value=$(grep "^${key}:" "$BASE_DIR/config.yml" | head -n1 | cut -d':' -f2- | xargs)
+  fi
+  
+  # Return value or default
+  echo "${value:-$default}"
 }
 
 # ------------------------------------------------------------
-# 🔍 HÀM: Validate domain hợp lệ
+# � HÀM: Install Nginx
+# ------------------------------------------------------------
+install_nginx() {
+  local DOMAIN=${1:-"localhost"}
+  
+  log_info "Đang cài đặt Nginx..."
+  
+  # Kiểm tra đã cài chưa
+  if command_exists nginx; then
+    log_info "Nginx đã được cài đặt"
+    if service_is_active nginx; then
+      log_info "✅ Nginx đang chạy"
+      nginx -v 2>&1 | grep -o 'nginx/[0-9.]*'
+      return 0
+    fi
+  fi
+  
+  # Chờ apt lock
+  wait_for_apt
+  
+  # Cài đặt Nginx
+  log_info "Cài đặt Nginx từ apt..."
+  if ! apt-get install -y nginx &>/dev/null; then
+    log_error "Không thể cài đặt Nginx!"
+    return 1
+  fi
+  
+  # Cấu hình Nginx
+  log_info "Cấu hình Nginx..."
+  
+  # Backup config gốc
+  if [ -f /etc/nginx/nginx.conf ]; then
+    cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
+  fi
+  
+  # Tối ưu nginx.conf
+  cat > /etc/nginx/nginx.conf <<'NGINX_CONF'
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 2048;
+    multi_accept on;
+    use epoll;
+}
+
+http {
+    # Basic Settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    server_tokens off;
+    client_max_body_size 128M;
+
+    # MIME Types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # SSL Settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    # Logging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    # Gzip Compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/json application/javascript application/xml+rss 
+               application/rss+xml font/truetype font/opentype 
+               application/vnd.ms-fontobject image/svg+xml;
+
+    # Virtual Host Configs
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+NGINX_CONF
+  
+  # Xóa default site
+  rm -f /etc/nginx/sites-enabled/default
+  
+  # Tạo site mặc định
+  if [ "$DOMAIN" != "localhost" ]; then
+    log_info "Tạo virtual host cho $DOMAIN..."
+    
+    mkdir -p "/var/www/$DOMAIN/public_html"
+    
+    cat > "/etc/nginx/sites-available/$DOMAIN.conf" <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+    
+    root /var/www/$DOMAIN/public_html;
+    index index.php index.html index.htm;
+    
+    access_log /var/log/nginx/${DOMAIN}.access.log;
+    error_log /var/log/nginx/${DOMAIN}.error.log;
+    
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+    
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${CONFIG_default_php:-8.2}-fpm.sock;
+    }
+    
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+    
+    ln -sf "/etc/nginx/sites-available/$DOMAIN.conf" /etc/nginx/sites-enabled/
+    
+    # Tạo file test
+    cat > "/var/www/$DOMAIN/public_html/index.php" <<'EOF'
+<?php
+phpinfo();
+EOF
+    
+    chown -R www-data:www-data "/var/www/$DOMAIN"
+  fi
+  
+  # Test config
+  if ! nginx -t &>/dev/null; then
+    log_error "Nginx config có lỗi!"
+    return 1
+  fi
+  
+  # Enable và start
+  systemctl enable nginx &>/dev/null
+  systemctl restart nginx
+  
+  if service_is_active nginx; then
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ Nginx đã được cài đặt và đang chạy"
+    log_info "🌐 Domain: $DOMAIN"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  else
+    log_error "Nginx không khởi động được"
+    return 1
+  fi
+  
+  echo "$(date '+%Y-%m-%d %H:%M:%S') | INSTALL NGINX | $DOMAIN" >> "$LOG_FILE"
+  
+  return 0
+}
+
+# ------------------------------------------------------------
+# �🔍 HÀM: Validate domain hợp lệ
 # ------------------------------------------------------------
 validate_domain() {
   local domain=$1
@@ -54,7 +230,7 @@ add_website() {
   fi
 
   # Lấy default PHP version từ config.yml
-  default_php=$(read_config "default_php")
+  default_php=$(read_config "default_php" "8.2")
   echo "🧩 Chọn phiên bản PHP (Enter để dùng mặc định: $default_php)"
   read phpv
   phpv=${phpv:-$default_php}

@@ -1,12 +1,72 @@
+# ========================================================
+# ThanhTV VPS Configuration File
+# Version: 2.0
+# ========================================================
+
+# === GENERAL SETTINGS ===
 default_domain: demo.local
-php_versions:
-  - 7.4
-  - 8.1
-  - 8.2
-  - 8.3
-filemanager_port: 8080
-auto_ssl: true
+admin_email: admin@demo.local
+timezone: Asia/Ho_Chi_Minh
+
+# === PHP SETTINGS ===
+php_versions: 7.4 8.1 8.2 8.3
+default_php: 8.2
+
+# === WEB SERVER (NGINX) ===
+nginx:
+  worker_processes: auto
+  client_max_body_size: 128M
+  enable_gzip: true
+  enable_brotli: true
+
+# === DATABASE (MariaDB/MySQL) ===
 mysql:
   random_password: true
+  root_password: ""  # Leave empty for auto-generate
+  default_charset: utf8mb4
+  default_collation: utf8mb4_unicode_ci
+
+# === REDIS ===
+redis:
+  enabled: true
+  port: 6379
+  maxmemory: 256mb
+  maxmemory_policy: allkeys-lru
+
+# === NODEJS ===
+nodejs:
+  enabled: false
+  versions:
+    - 18
+    - 20
+  default_version: 20
+
+# === FILE MANAGER ===
+filemanager:
+  enabled: true
+  port: 8080
+  username: admin
+
+# === SSL/TLS ===
+ssl:
+  auto_ssl: true
+  email: ""  # For Let's Encrypt notifications
+
+# === BACKUP ===
 backup:
   enabled: false
+  schedule: "30 2 * * *"  # 2:30 AM daily
+  keep_days: 7
+  backup_path: /opt/backups
+
+# === SECURITY ===
+security:
+  fail2ban: true
+  ufw_firewall: true
+  ssh_port: 22
+  disable_root_ssh: false
+
+# === MONITORING ===
+monitoring:
+  enable_logs: true
+  log_rotation: true

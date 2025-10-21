@@ -84,32 +84,39 @@ check_disk() {
 # ------------------------------------------------------------
 # 🧰 MENU QUẢN LÝ HỆ THỐNG
 # ------------------------------------------------------------
-show_system_menu() {
-  clear
-  echo "============================================="
-  echo "⚙️  CÔNG CỤ QUẢN TRỊ HỆ THỐNG VPS"
-  echo "============================================="
-  echo "1️⃣  Xem thông tin hệ thống"
-  echo "2️⃣  Restart dịch vụ web"
-  echo "3️⃣  Dọn dẹp hệ thống"
-  echo "4️⃣  Cập nhật hệ thống"
-  echo "5️⃣  Kiểm tra dung lượng ổ đĩa"
-  echo "6️⃣  Thoát"
-  echo "---------------------------------------------"
-  read -p "👉 Chọn thao tác: " opt
+show_system_menu_internal() {
+  while true; do
+    clear
+    echo "============================================="
+    echo "⚙️  CÔNG CỤ QUẢN TRỊ HỆ THỐNG VPS"
+    echo "============================================="
+    echo "1️⃣  Xem thông tin hệ thống"
+    echo "2️⃣  Restart dịch vụ web"
+    echo "3️⃣  Dọn dẹp hệ thống"
+    echo "4️⃣  Cập nhật hệ thống"
+    echo "5️⃣  Kiểm tra dung lượng ổ đĩa"
+    echo "6️⃣  Quay lại menu chính"
+    echo "---------------------------------------------"
+    read -p "👉 Chọn thao tác: " opt
 
-  case $opt in
-    1) show_sysinfo ;;
-    2) restart_services ;;
-    3) clean_system ;;
-    4) update_system ;;
-    5) check_disk ;;
-    6) exit 0 ;;
-    *) echo "❌ Lựa chọn không hợp lệ." ;;
-  esac
+    case $opt in
+      1) show_sysinfo; read -p "Press Enter to continue..." ;;
+      2) restart_services; read -p "Press Enter to continue..." ;;
+      3) clean_system; read -p "Press Enter to continue..." ;;
+      4) update_system; read -p "Press Enter to continue..." ;;
+      5) check_disk; read -p "Press Enter to continue..." ;;
+      6) return 0 ;;
+      *) echo "❌ Lựa chọn không hợp lệ."; sleep 1 ;;
+    esac
+  done
+}
+
+# Alias for compatibility
+show_system_menu() {
+  show_system_menu_internal
 }
 
 # Nếu gọi trực tiếp file (không phải từ menu.sh)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  show_system_menu
+  show_system_menu_internal
 fi

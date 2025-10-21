@@ -1,0 +1,285 @@
+#!/bin/bash
+# ========================================================
+# 🚀 ThanhTV VPS - Command Shortcut
+# Version: 2.0
+# Usage: thanhvps [command]
+# ========================================================
+
+# Detect BASE_DIR from script location
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
+
+# Try to find ThanhTV VPS installation
+if [ -f "$SCRIPT_DIR/functions/menu.sh" ]; then
+  BASE_DIR="$SCRIPT_DIR"
+elif [ -f "/opt/thanhvps/functions/menu.sh" ]; then
+  BASE_DIR="/opt/thanhvps"
+elif [ -f "$HOME/thanhvps/functions/menu.sh" ]; then
+  BASE_DIR="$HOME/thanhvps"
+else
+  echo "❌ Cannot find ThanhTV VPS installation!"
+  echo "Please run install.sh first or check installation path."
+  exit 1
+fi
+
+export BASE_DIR
+
+# Load utils
+if [ -f "$BASE_DIR/functions/utils.sh" ]; then
+  source "$BASE_DIR/functions/utils.sh"
+fi
+
+# Parse command
+COMMAND=${1:-menu}
+
+case "$COMMAND" in
+  menu|m)
+    # Open main menu
+    source "$BASE_DIR/functions/menu.sh"
+    main_menu
+    ;;
+    
+  website|web|w)
+    # Website management
+    source "$BASE_DIR/functions/utils.sh"
+    source "$BASE_DIR/functions/setup_nginx.sh"
+    
+    case "$2" in
+      add|create)
+        add_website
+        ;;
+      remove|delete|rm)
+        remove_website
+        ;;
+      list|ls)
+        list_websites
+        ;;
+      *)
+        echo "Usage: thanhvps website [add|remove|list]"
+        ;;
+    esac
+    ;;
+    
+  database|db|d)
+    # Database management
+    source "$BASE_DIR/functions/utils.sh"
+    source "$BASE_DIR/functions/setup_mysql.sh"
+    
+    case "$2" in
+      create|add)
+        create_db
+        ;;
+      delete|remove|rm)
+        delete_db
+        ;;
+      list|ls)
+        list_db
+        ;;
+      export|backup)
+        export_db
+        ;;
+      *)
+        echo "Usage: thanhvps database [create|delete|list|export]"
+        ;;
+    esac
+    ;;
+    
+  backup|bk)
+    # Backup
+    source "$BASE_DIR/functions/utils.sh"
+    bash "$BASE_DIR/functions/backup.sh"
+    ;;
+    
+  system|sys)
+    # System tools
+    source "$BASE_DIR/functions/utils.sh"
+    source "$BASE_DIR/functions/system.sh"
+    show_system_menu_internal
+    ;;
+    
+  update|up)
+    # Auto update
+    bash "$BASE_DIR/functions/autoupdate.sh"
+    ;;
+    
+  install)
+    # Run installation
+    bash "$BASE_DIR/install.sh"
+    ;;
+    
+  info|status)
+    # Show system info
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 ThanhTV VPS Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Version
+    if [ -f "$BASE_DIR/version.txt" ]; then
+      echo "📦 Version: $(cat $BASE_DIR/version.txt)"
+    fi
+    
+    echo "📂 Base Dir: $BASE_DIR"
+    echo ""
+    
+    # Services status
+    echo "🔧 Services:"
+    
+    if command_exists nginx; then
+      if service_is_active nginx; then
+        echo "  ✅ Nginx: Running"
+      else
+        echo "  ❌ Nginx: Stopped"
+      fi
+    fi
+    
+    if command_exists php8.2; then
+      if service_is_active php8.2-fpm; then
+        echo "  ✅ PHP 8.2: Running"
+      else
+        echo "  ❌ PHP 8.2: Stopped"
+      fi
+    fi
+    
+    if command_exists mysql; then
+      if service_is_active mariadb; then
+        echo "  ✅ MariaDB: Running"
+      else
+        echo "  ❌ MariaDB: Stopped"
+      fi
+    fi
+    
+    if command_exists redis-server; then
+      if service_is_active redis-server; then
+        echo "  ✅ Redis: Running"
+      else
+        echo "  ❌ Redis: Stopped"
+      fi
+    fi
+    
+    if command_exists node; then
+      echo "  ✅ NodeJS: $(node -v)"
+    fi
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    ;;
+    
+  restart)
+    # Restart all services
+    source "$BASE_DIR/functions/utils.sh"
+    log_info "Restarting all services..."
+    
+    systemctl restart nginx 2>/dev/null && log_info "✅ Nginx restarted"
+    
+    for php_ver in 7.4 8.1 8.2 8.3; do
+      if systemctl is-enabled "php${php_ver}-fpm" &>/dev/null; then
+        systemctl restart "php${php_ver}-fpm" 2>/dev/null && log_info "✅ PHP ${php_ver} restarted"
+      fi
+    done
+    
+    systemctl restart mariadb 2>/dev/null && log_info "✅ MariaDB restarted"
+    systemctl restart redis-server 2>/dev/null && log_info "✅ Redis restarted"
+    
+    log_info "🎉 All services restarted!"
+    ;;
+    
+  logs|log)
+    # Show logs
+    case "$2" in
+      nginx)
+        tail -f /var/log/nginx/error.log
+        ;;
+      php)
+        PHP_VER=${3:-8.2}
+        tail -f "/var/log/php${PHP_VER}-fpm.log"
+        ;;
+      mysql|mariadb)
+        tail -f /var/log/mysql/error.log
+        ;;
+      redis)
+        tail -f /var/log/redis/redis-server.log
+        ;;
+      install)
+        tail -f "$BASE_DIR/logs/install.log"
+        ;;
+      *)
+        echo "Usage: thanhvps logs [nginx|php|mysql|redis|install]"
+        ;;
+    esac
+    ;;
+    
+  version|v|-v|--version)
+    # Show version
+    if [ -f "$BASE_DIR/version.txt" ]; then
+      echo "ThanhTV VPS v$(cat $BASE_DIR/version.txt)"
+    else
+      echo "ThanhTV VPS"
+    fi
+    ;;
+    
+  help|h|-h|--help)
+    # Show help
+    cat << 'EOF'
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 ThanhTV VPS - Command Line Interface
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+USAGE:
+  thanhvps [command] [options]
+
+COMMANDS:
+  menu, m              Open main menu (default)
+  
+  website, web, w      Website management
+    add                Create new website
+    remove             Remove website
+    list               List all websites
+    
+  database, db, d      Database management
+    create             Create new database
+    delete             Delete database
+    list               List all databases
+    export             Export database
+    
+  backup, bk           Backup management
+  
+  system, sys          System administration tools
+  
+  update, up           Auto-update script
+  
+  install              Run installation
+  
+  info, status         Show system status
+  
+  restart              Restart all services
+  
+  logs, log            View logs
+    nginx              Nginx error log
+    php [version]      PHP-FPM log (default: 8.2)
+    mysql              MySQL/MariaDB log
+    redis              Redis log
+    install            Installation log
+    
+  version, v           Show version
+  
+  help, h              Show this help
+
+EXAMPLES:
+  thanhvps                    # Open menu
+  thanhvps website add        # Add new website
+  thanhvps db create          # Create database
+  thanhvps restart            # Restart all services
+  thanhvps logs nginx         # View Nginx logs
+  thanhvps info               # Show status
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+    ;;
+    
+  *)
+    echo "❌ Unknown command: $COMMAND"
+    echo "Run 'thanhvps help' for usage information"
+    exit 1
+    ;;
+esac
