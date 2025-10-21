@@ -12,7 +12,7 @@
 # ============================================================
 
 # 🧩 Đường dẫn cơ bản
-BASE_DIR=$(dirname "$(realpath "$0")")/
+BASE_DIR=$(dirname "$(realpath "$0")")
 LOG_FILE="$BASE_DIR/logs/install.log"
 CONFIG_FILE="$BASE_DIR/config.yml"
 
