@@ -85,8 +85,9 @@ install_php() {
     done
     
     # Install packages
-    if ! apt-get install -y $packages &>/dev/null; then
-      log_error "Lỗi khi cài PHP ${ver}. Bỏ qua..."
+    if ! apt-get install -y $packages 2>&1 | tee -a "$BASE_DIR/logs/php_install.log"; then
+      log_error "Lỗi khi cài PHP ${ver}. Kiểm tra logs/php_install.log"
+      log_warn "Packages: $packages"
       continue
     fi
     

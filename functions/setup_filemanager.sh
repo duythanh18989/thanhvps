@@ -22,9 +22,15 @@ install_filemanager() {
     log_error "❌ FileBrowser binary không tồn tại. Cài đặt thất bại."
     return 1
   fi
+  
+  # Initialize filebrowser database
+  cd /opt/filebrowser
+  filebrowser config init &>/dev/null
+  filebrowser config set --port $PORT &>/dev/null
+  filebrowser config set --root /var/www &>/dev/null
 
   # Tạo user mặc định
-  filebrowser users add $USER $PASS --perm.admin
+  filebrowser users add $USER $PASS --perm.admin &>/dev/null
 
   # Tạo service systemd
   cat > /etc/systemd/system/filebrowser.service <<EOF

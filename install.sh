@@ -196,17 +196,20 @@ echo ""
 log_info "Đang cài đặt command shortcut..."
 
 if [ -f "$BASE_DIR/thanhvps" ]; then
+  # Make executable
+  chmod +x "$BASE_DIR/thanhvps"
+  
   # Copy to /usr/local/bin
   cp "$BASE_DIR/thanhvps" /usr/local/bin/thanhvps
   chmod +x /usr/local/bin/thanhvps
   
-  # Create symlink if not exists
-  if [ ! -L /usr/bin/thanhvps ]; then
-    ln -sf /usr/local/bin/thanhvps /usr/bin/thanhvps
+  # Test the command
+  if command_exists thanhvps; then
+    log_info "✅ Command 'thanhvps' đã được cài đặt"
+    log_info "   Gọi từ bất kỳ đâu: thanhvps"
+  else
+    log_warn "⚠️  Command cài đặt nhưng chưa available, thử: hash -r"
   fi
-  
-  log_info "✅ Command 'thanhvps' đã được cài đặt"
-  log_info "   Bạn có thể gọi: thanhvps (từ bất kỳ đâu)"
 else
   log_warn "File thanhvps không tìm thấy, bỏ qua"
 fi
