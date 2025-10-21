@@ -695,13 +695,46 @@ configure_firewall() {
   ufw allow 80/tcp    # HTTP
   ufw allow 443/tcp   # HTTPS
   
-  # Allow custom ports if configured
+  # Auto-detect and allow FileBrowser port
   if [ -n "${CONFIG_filemanager_port}" ]; then
-    ufw allow ${CONFIG_filemanager_port}/tcp  # FileBrowser
+    log_info "Opening FileBrowser port: ${CONFIG_filemanager_port}"
+    ufw allow ${CONFIG_filemanager_port}/tcp
+  elif [ -f "/etc/systemd/system/filebrowser.service" ]; then
+    # Extract port from service file
+    fb_port=$(grep -oP 'port \K[0-9]+' /etc/systemd/system/filebrowser.service 2>/dev/null || echo "8080")
+    log_info "Opening FileBrowser port: ${fb_port}"
+    ufw allow ${fb_port}/tcp
   fi
   
-  ufw status
+  # Auto-detect and allow phpMyAdmin port
+  if [ -f "/etc/nginx/sites-available/phpmyadmin.conf" ]; then
+    pma_port=$(grep -oP 'listen \K[0-9]+' /etc/nginx/sites-available/phpmyadmin.conf 2>/dev/null | head -1)
+    if [ -n "$pma_port" ] && [ "$pma_port" != "80" ]; then
+      log_info "Opening phpMyAdmin port: ${pma_port}"
+      ufw allow ${pma_port}/tcp
+    fi
+  fi
+  
+  # Auto-detect NodeJS apps ports from PM2
+  if command_exists pm2; then
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    
+    # Get ports from PM2 apps (if PORT env var is set)
+    pm2_ports=$(pm2 jlist 2>/dev/null | grep -oP '"PORT":\s*"\K[0-9]+' | sort -u)
+    for port in $pm2_ports; do
+      if [ -n "$port" ]; then
+        log_info "Opening NodeJS app port: ${port}"
+        ufw allow ${port}/tcp
+      fi
+    done
+  fi
+  
+  echo ""
+  ufw status numbered
+  echo ""
   log_info "✅ Firewall configured!"
+  log_info "💡 Các port đã mở: SSH(22), HTTP(80), HTTPS(443), FileBrowser, phpMyAdmin, NodeJS apps"
 }
 
 # Install/manage PHP version
