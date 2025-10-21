@@ -1,6 +1,6 @@
 #!/bin/bash
 # ========================================================
-# 🗄️ setup_mysql.sh - Cài đặt MariaDB + set root password
+# 🗄️ setup_mysql.sh - Cài đặt MariaDB + set root password (cập nhật)
 # ========================================================
 
 install_mysql() {
@@ -12,8 +12,10 @@ install_mysql() {
   systemctl enable mariadb
   systemctl start mariadb
 
-  # Đặt mật khẩu root
-  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_PASS'; FLUSH PRIVILEGES;"
+  log_info "Đang thiết lập mật khẩu root..."
+
+  # Chạy bằng sudo, chuyển sang mysql_native_password
+  sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('$MYSQL_PASS'); FLUSH PRIVILEGES;"
 
   log_info "✅ MariaDB đã cài đặt và đặt mật khẩu root."
 }

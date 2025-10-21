@@ -50,12 +50,12 @@ show_main_menu() {
   fi
 
   case "$choice" in
-    *Website*|1) show_website_menu ;;
-    *Database*|2) show_db_menu ;;
-    *Backup*|3) bash "$BASE_DIR/functions/backup.sh" ;;
-    *Hệ thống*|4) bash "$BASE_DIR/functions/system.sh" ;;
-    *Update*|5) bash "$BASE_DIR/functions/autoupdate.sh" ;;
-    *Thoát*|6) echo "👋 Tạm biệt!"; exit 0 ;;
+    Website|1) show_website_menu ;;
+    Database|2) show_db_menu ;;
+    Backup|3) bash "$BASE_DIR/functions/backup.sh" ;;
+    Hệ thống|4) bash "$BASE_DIR/functions/system.sh" ;;
+    Update|5) bash "$BASE_DIR/functions/autoupdate.sh" ;;
+    Thoát|6) echo "👋 Tạm biệt!"; exit 0 ;;
   esac
 }
 
@@ -82,12 +82,12 @@ show_website_menu() {
   fi
 
   case "$choice" in
-    *Thêm*|1) add_website ;;
-    *Xóa*|2) remove_website ;;
-    *Danh sách*|3) list_websites ;;
-    *log*|4) view_logs ;;
-    *Restart*|5) restart_nginx_php ;;
-    *Quay lại*|6) show_main_menu ;;
+    Thêm|1) add_website ;;
+    Xóa|2) remove_website ;;
+    Danh sách|3) list_websites ;;
+    log|4) view_logs ;;
+    Restart|5) restart_nginx_php ;;
+    Quay lại|6) show_main_menu ;;
   esac
 }
 
@@ -110,10 +110,10 @@ show_db_menu() {
   fi
 
   case "$choice" in
-    *Tạo*|1) create_db ;;
-    *Xóa*|2) delete_db ;;
-    *Danh sách*|3) list_db ;;
-    *Quay lại*|4) show_main_menu ;;
+    Tạo|1) create_db ;;
+    Xóa|2) delete_db ;;
+    Danh sách|3) list_db ;;
+    Quay lại|4) show_main_menu ;;
   esac
 }
 
