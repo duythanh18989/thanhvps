@@ -6,12 +6,13 @@
 install_filemanager() {
   local PORT=${CONFIG_filemanager_port:-8080}
   local USER=${CONFIG_filemanager_username:-admin}
+  # Generate 16-char password (FileBrowser requires min 12 chars)
   local PASS=$(random_password 16)
 
   log_info "Đang cài FileBrowser..."
 
   # Tạo thư mục chứa filebrowser data
-  mkdir -p /opt/filebrowser
+  mkdir -p /etc/filebrowser
   mkdir -p /var/www
 
   # Tải và cài đặt FileBrowser (binary vào /usr/local/bin)
@@ -30,13 +31,12 @@ install_filemanager() {
   # Init config database
   filebrowser config init --database /etc/filebrowser/filebrowser.db
   
-  # Configure filebrowser
+  # Configure filebrowser (min password length is hardcoded to 12)
   filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
   filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
   filebrowser config set --log /var/log/filebrowser.log --database /etc/filebrowser/filebrowser.db
-  filebrowser config set --auth.min-password-length 6 --database /etc/filebrowser/filebrowser.db
 
-  # Tạo user mặc định
+  # Tạo user mặc định (password must be 12+ chars)
   filebrowser users add $USER $PASS --perm.admin --database /etc/filebrowser/filebrowser.db
 
   # Tạo service systemd
@@ -89,7 +89,7 @@ reconfigure_filemanager() {
     cd /etc/filebrowser
     filebrowser config init --database /etc/filebrowser/filebrowser.db
     
-    # Add default user
+    # Add default user (password must be 12+ chars)
     local USER=${CONFIG_filemanager_username:-admin}
     local PASS=${CONFIG_filemanager_password:-$(random_password 16)}
     filebrowser users add $USER $PASS --perm.admin --database /etc/filebrowser/filebrowser.db
@@ -105,7 +105,6 @@ reconfigure_filemanager() {
   cd /etc/filebrowser
   filebrowser config set --address 0.0.0.0 --port $PORT --database /etc/filebrowser/filebrowser.db
   filebrowser config set --root /var/www --database /etc/filebrowser/filebrowser.db
-  filebrowser config set --auth.min-password-length 6 --database /etc/filebrowser/filebrowser.db
   
   # Update systemd service
   cat > /etc/systemd/system/filebrowser.service <<EOF
