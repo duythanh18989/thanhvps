@@ -138,3 +138,117 @@ uninstall_phpmyadmin() {
   
   log_info "✅ phpMyAdmin removed"
 }
+
+# Show phpMyAdmin info
+show_phpmyadmin_info() {
+  if [ ! -d "/var/www/phpmyadmin" ]; then
+    log_error "❌ phpMyAdmin chưa được cài đặt"
+    return 1
+  fi
+  
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🗄️  THÔNG TIN PHPMYADMIN"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  # Check config
+  if [ -f "/etc/nginx/sites-available/phpmyadmin.conf" ]; then
+    local url=""
+    if grep -q "listen 80" /etc/nginx/sites-available/phpmyadmin.conf; then
+      # Subdomain mode
+      local domain=$(grep "server_name" /etc/nginx/sites-available/phpmyadmin.conf | awk '{print $2}' | tr -d ';')
+      url="http://$domain"
+    else
+      # Port mode
+      local port=$(grep "listen" /etc/nginx/sites-available/phpmyadmin.conf | head -1 | awk '{print $2}' | tr -d ';')
+      local ip=$(hostname -I | awk '{print $1}')
+      url="http://$ip:$port"
+    fi
+    
+    echo "🌐 URL: $url"
+  fi
+  
+  echo ""
+  echo "📝 Thông tin đăng nhập:"
+  echo "   User: root"
+  echo "   Pass: <MySQL root password>"
+  echo ""
+  echo "💡 Lấy mật khẩu MySQL root từ: $INSTALL_LOG"
+  echo ""
+  
+  # Show MySQL root password if available
+  if [ -f "$INSTALL_LOG" ]; then
+    local mysql_pass=$(grep "MySQL root password:" "$INSTALL_LOG" | tail -1 | cut -d':' -f2- | xargs)
+    if [ -n "$mysql_pass" ]; then
+      echo "🔑 MySQL root password: $mysql_pass"
+    fi
+  fi
+}
+
+# List MySQL users
+list_mysql_users() {
+  if ! systemctl is-active --quiet mariadb; then
+    log_error "❌ MariaDB service không chạy"
+    return 1
+  fi
+  
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "👥 DANH SÁCH USER MYSQL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  mysql -e "SELECT User, Host FROM mysql.user ORDER BY User;" 2>/dev/null || {
+    log_error "❌ Không thể kết nối MySQL. Kiểm tra mật khẩu root."
+    return 1
+  }
+}
+
+# Change MySQL user password
+change_mysql_password() {
+  if ! systemctl is-active --quiet mariadb; then
+    log_error "❌ MariaDB service không chạy"
+    return 1
+  fi
+  
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔐 ĐỔI MẬT KHẨU MYSQL USER"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  # List users first
+  echo "Danh sách users:"
+  mysql -e "SELECT User, Host FROM mysql.user WHERE User != '' ORDER BY User;" 2>/dev/null
+  echo ""
+  
+  if $use_gum; then
+    username=$(gum input --placeholder "Nhập username (mặc định: root)")
+    username=${username:-root}
+    
+    new_password=$(gum input --password --placeholder "Nhập mật khẩu mới (tối thiểu 8 ký tự)")
+  else
+    read -p "Nhập username [root]: " username
+    username=${username:-root}
+    
+    read -sp "Nhập mật khẩu mới: " new_password
+    echo ""
+  fi
+  
+  # Validate password length
+  if [ ${#new_password} -lt 8 ]; then
+    log_error "❌ Mật khẩu phải có ít nhất 8 ký tự"
+    return 1
+  fi
+  
+  # Change password
+  mysql -e "ALTER USER '${username}'@'localhost' IDENTIFIED BY '${new_password}';" 2>/dev/null || {
+    log_error "❌ Không thể đổi mật khẩu. Kiểm tra user có tồn tại không."
+    return 1
+  }
+  
+  mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
+  
+  log_info "✅ Đã đổi mật khẩu cho user: $username"
+  
+  # Update log file if root password changed
+  if [ "$username" = "root" ] && [ -f "$INSTALL_LOG" ]; then
+    echo "MySQL root password: $new_password (changed on $(date '+%Y-%m-%d %H:%M:%S'))" >> "$INSTALL_LOG"
+    log_info "📝 Mật khẩu đã được lưu vào: $INSTALL_LOG"
+  fi
+}

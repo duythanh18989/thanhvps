@@ -183,7 +183,10 @@ show_db_menu() {
       "3  Danh sach database" \
       "4  Export database" \
       "5  Cai dat phpMyAdmin" \
-      "6  Quay lai")
+      "6  Xem thong tin phpMyAdmin" \
+      "7  Danh sach MySQL users" \
+      "8  Doi mat khau MySQL user" \
+      "9  Quay lai")
   else
     choice=$(whiptail --title "Quan ly Database" --menu "Chon tac vu:" 20 70 10 \
       "1" "Tao database moi" \
@@ -191,7 +194,10 @@ show_db_menu() {
       "3" "Danh sach database" \
       "4" "Export database" \
       "5" "Cai dat phpMyAdmin" \
-      "6" "Quay lai" 3>&1 1>&2 2>&3)
+      "6" "Xem thong tin phpMyAdmin" \
+      "7" "Danh sach MySQL users" \
+      "8" "Doi mat khau MySQL user" \
+      "9" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -202,7 +208,10 @@ show_db_menu() {
     3) list_db; read -p "Press Enter to continue..."; show_db_menu ;;
     4) export_db; read -p "Press Enter to continue..."; show_db_menu ;;
     5) install_phpmyadmin_menu; read -p "Press Enter to continue..."; show_db_menu ;;
-    6|"") show_main_menu ;;
+    6) show_phpmyadmin_info; read -p "Press Enter to continue..."; show_db_menu ;;
+    7) list_mysql_users; read -p "Press Enter to continue..."; show_db_menu ;;
+    8) change_mysql_password; read -p "Press Enter to continue..."; show_db_menu ;;
+    9|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_db_menu ;;
   esac
 }
@@ -935,6 +944,24 @@ install_phpmyadmin_menu() {
   fi
   
   install_phpmyadmin
+}
+
+# Show phpMyAdmin info wrapper
+show_phpmyadmin_info() {
+  source "$BASE_DIR/functions/setup_phpmyadmin.sh"
+  show_phpmyadmin_info
+}
+
+# List MySQL users wrapper
+list_mysql_users() {
+  source "$BASE_DIR/functions/setup_phpmyadmin.sh"
+  list_mysql_users
+}
+
+# Change MySQL password wrapper
+change_mysql_password() {
+  source "$BASE_DIR/functions/setup_phpmyadmin.sh"
+  change_mysql_password
 }
 
 # ------------------------------------------------------
