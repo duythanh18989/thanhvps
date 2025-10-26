@@ -1421,23 +1421,28 @@ protect_url_with_password() {
   
   log_info "✅ Password file đã được tạo/cập nhật thành công"
   
+  # Set permissions for htpasswd file so nginx can read it
+  chmod 644 "$htpasswd_file"
+  chown www-data:www-data "$htpasswd_file" 2>/dev/null || chmod 644 "$htpasswd_file"
+  log_info "📝 Đã set permissions cho password file"
+  
   # Backup Nginx config
   cp "$config_file" "${config_file}.bak"
   
   log_info "🔧 Đang cập nhật Nginx config..."
   
   # Check if location block with auth already exists for this path
-  if grep -q "location.*$path" "$config_file" && grep -A5 "location.*$path" "$config_file" | grep -q "auth_basic"; then
-    log_warn "⚠️  URL này đã được bảo vệ, đang cập nhật mật khẩu mới..."
-    # Remove existing location block to replace with new one
-    # Create temp file without the old location block
+  if grep -A5 "location.*$path" "$config_file" | grep -q "auth_basic"; then
+    log_warn "⚠️  URL này đã được bảo vệ (có auth_basic), đang xóa location block cũ để thêm lại..."
+    
+    # Remove ALL location blocks that match this path
     awk -v path="$path" '
-    BEGIN { in_location=0; skip_block=0; depth=0 }
+    BEGIN { skip_block=0; depth=0 }
     {
-      # Detect location block start
-      if (/location.*{/ && $0 ~ path "[[:space:]]*{" || $0 ~ path "[[:space:]]*\\{") {
+      # Detect location block start that matches our path
+      if (/location[[:space:]]+.*\{/ && $0 ~ path) {
         skip_block=1
-        in_location=1
+        depth=1
         next
       }
       
@@ -1448,7 +1453,43 @@ protect_url_with_password() {
           depth--
           if (depth <= 0) {
             skip_block=0
-            in_location=0
+            depth=0
+          }
+        }
+        next
+      }
+      
+      print
+    }
+    ' "$config_file" > "${config_file}.tmp"
+    
+    # Verify removal
+    if grep -q "location.*$path" "${config_file}.tmp"; then
+      log_warn "⚠️  Vẫn còn location block cho path này, có thể có nhiều blocks"
+    else
+      log_info "✅ Đã xóa location block cũ"
+    fi
+    
+    mv "${config_file}.tmp" "$config_file"
+  elif grep -q "location.*$path" "$config_file"; then
+    # Location exists but without auth_basic - replace it
+    log_warn "⚠️  Location block đã tồn tại nhưng chưa có auth, đang xóa và thêm lại..."
+    
+    awk -v path="$path" '
+    BEGIN { skip_block=0; depth=0 }
+    {
+      if (/location[[:space:]]+.*\{/ && $0 ~ path) {
+        skip_block=1
+        depth=1
+        next
+      }
+      
+      if (skip_block) {
+        if (/{/) depth++
+        if (/}/) {
+          depth--
+          if (depth <= 0) {
+            skip_block=0
             depth=0
           }
         }
@@ -1513,11 +1554,21 @@ EOF
   
   # Show the added location block for verification
   log_info ""
-  log_info "📝 Location block đã được thêm:"
+  log_info "📝 Location block đã được thêm cho path: $path"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  if grep -A10 "location.*$path" "$config_file" 2>/dev/null | head -15; then
+  location_content=$(grep -A20 "location.*$path" "$config_file" 2>/dev/null | head -25)
+  if [ -n "$location_content" ]; then
+    echo "$location_content"
     echo ""
-    log_info "✅ Location block đã được thêm đúng vào nginx config"
+    log_info "✅ Location block đã được thêm vào nginx config"
+    
+    # Verify it has auth_basic
+    if echo "$location_content" | grep -q "auth_basic"; then
+      log_info "✅ Có auth_basic directive - URL sẽ yêu cầu password"
+    else
+      log_error "❌ KHÔNG TÌM THẤY auth_basic trong location block!"
+      log_warn "Location block có thể chưa được thêm đúng"
+    fi
   else
     log_warn "⚠️  Không thấy location block trong config"
     log_warn "📁 Kiểm tra file: $config_file"
