@@ -1503,19 +1503,38 @@ protect_url_with_password() {
   fi
   
   # Add new location block with password protection
-  # Simply append before the closing server brace (simple approach)
-  # Get the line number of the last closing brace
+  # CRITICAL: Find the HTTPS server block (listen 443) and add location there
   
-  # Find the last closing brace (should be server block closing)
-  last_brace_line=$(grep -n "^}" "$config_file" | tail -1 | cut -d: -f1)
+  # Find line with "listen 443" 
+  ssl_listen_line=$(grep -n "listen 443" "$config_file" | head -1 | cut -d: -f1)
   
-  if [ -n "$last_brace_line" ]; then
-    # Insert location block before the last brace
-    # Take everything before last brace
-    head -n $((last_brace_line - 1)) "$config_file" > "${config_file}.tmp"
+  if [ -n "$ssl_listen_line" ]; then
+    log_info "🔍 Tìm thấy HTTPS server block tại dòng: $ssl_listen_line"
     
-    # Add the location block
-    cat >> "${config_file}.tmp" <<EOF
+    # Find the closing brace of the HTTPS server block (look for "ssl_dhparam" or similar)
+    # The HTTPS server block should have ssl_dhparam near the end
+    ssl_end_line=$(grep -n "ssl_dhparam" "$config_file" | head -1 | cut -d: -f1)
+    
+    if [ -n "$ssl_end_line" ]; then
+      # Find the next closing brace after ssl_dhparam (this should close the HTTPS server block)
+      target_line=""
+      line_num=0
+      while IFS= read -r line; do
+        ((line_num++))
+        if [ $line_num -gt "$ssl_end_line" ]; then
+          if [[ "$line" =~ ^[[:space:]]*\}\s*$ ]]; then
+            target_line=$line_num
+            break
+          fi
+        fi
+      done < "$config_file"
+      
+      if [ -n "$target_line" ]; then
+        log_info "📝 Tìm thấy vị trí đóng server block tại dòng: $target_line"
+        # Insert location block before the closing brace
+        head -n $((target_line - 1)) "$config_file" > "${config_file}.tmp"
+        
+        cat >> "${config_file}.tmp" <<EOF
     
     # Password protected location: $path
     location $path {
@@ -1528,8 +1547,46 @@ protect_url_with_password() {
     }
 }
 EOF
+        
+        mv "${config_file}.tmp" "$config_file"
+      else
+        log_warn "⚠️  Không tìm thấy vị trí đóng server block, dùng cách fallback"
+        # Fallback: add at the end of file
+        cat >> "$config_file" <<EOF
+
+    # Password protected location: $path
+    location $path {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        index index.html index.php;
+        try_files \$uri \$uri/ =404;
+    }
+EOF
+      fi
+    else
+      # Fallback if can't find ssl_dhparam
+      log_warn "⚠️  Không tìm thấy ssl_dhparam, thêm location vào đầu server block HTTPS"
+      # Insert after ssl_listen_line + 10 lines (should be in the middle of server block)
+      target_line=$((ssl_listen_line + 15))
+      head -n "$target_line" "$config_file" > "${config_file}.tmp"
+      
+      cat >> "${config_file}.tmp" <<EOF
+
+    # Password protected location: $path
+    location $path {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        index index.html index.php;
+        try_files \$uri \$uri/ =404;
+    }
+EOF
+      tail -n +$((target_line + 1)) "$config_file" >> "${config_file}.tmp"
+      mv "${config_file}.tmp" "$config_file"
+    fi
   else
-    # Fallback: just append at the end
+    log_warn "⚠️  Không tìm thấy 'listen 443', thêm location vào cuối file"
     cat >> "$config_file" <<EOF
 
     # Password protected location: $path
@@ -1537,15 +1594,11 @@ EOF
         auth_basic "Restricted Area";
         auth_basic_user_file $htpasswd_file;
         
-        # Allow existing content to work
         index index.html index.php;
         try_files \$uri \$uri/ =404;
     }
 EOF
-    cp "$config_file" "${config_file}.tmp"
   fi
-  
-  mv "${config_file}.tmp" "$config_file"
   
   # Debug: Show what was added
   log_info "📋 Đã thêm location block bảo vệ path: $path"
