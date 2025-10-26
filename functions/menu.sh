@@ -145,17 +145,21 @@ show_website_menu() {
       "1  Them website moi" \
       "2  Xoa website" \
       "3  Danh sach website" \
-      "4  Xem log website" \
-      "5  Restart Nginx/PHP" \
-      "6  Quay lai")
+      "4  Bao mat URL bang password" \
+      "5  Xoa bao mat URL" \
+      "6  Xem log website" \
+      "7  Restart Nginx/PHP" \
+      "8  Quay lai")
   else
-    choice=$(whiptail --title "Quan ly Website" --menu "Chon tac vu:" 20 70 10 \
+    choice=$(whiptail --title "Quan ly Website" --menu "Chon tac vu:" 22 70 12 \
       "1" "Them website moi" \
       "2" "Xoa website" \
       "3" "Danh sach website" \
-      "4" "Xem log website" \
-      "5" "Restart Nginx/PHP" \
-      "6" "Quay lai" 3>&1 1>&2 2>&3)
+      "4" "Bao mat URL bang password" \
+      "5" "Xoa bao mat URL" \
+      "6" "Xem log website" \
+      "7" "Restart Nginx/PHP" \
+      "8" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -164,9 +168,11 @@ show_website_menu() {
     1) add_website; read -p "Press Enter to continue..."; show_website_menu ;;
     2) remove_website; read -p "Press Enter to continue..."; show_website_menu ;;
     3) list_websites; read -p "Press Enter to continue..."; show_website_menu ;;
-    4) view_logs; show_website_menu ;;
-    5) restart_nginx_php; read -p "Press Enter to continue..."; show_website_menu ;;
-    6|"") show_main_menu ;;
+    4) protect_url_with_password; read -p "Press Enter to continue..."; show_website_menu ;;
+    5) remove_url_password; read -p "Press Enter to continue..."; show_website_menu ;;
+    6) view_logs; show_website_menu ;;
+    7) restart_nginx_php; read -p "Press Enter to continue..."; show_website_menu ;;
+    8|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_website_menu ;;
   esac
 }
@@ -1217,6 +1223,480 @@ reset_mysql_root_password() {
 restart_mysql_service() {
   source "$BASE_DIR/functions/setup_phpmyadmin.sh"
   restart_mysql_service
+}
+
+# ------------------------------------------------------
+# URL Password Protection Functions
+# ------------------------------------------------------
+
+# Protect URL with password
+protect_url_with_password() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔒 BẢO MẬT URL BẰNG PASSWORD"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Ask for URL type
+  echo "Chọn loại URL cần bảo vệ:"
+  if $use_gum; then
+    url_type=$(gum choose "1. Domain-based (ví dụ: vinainbox.com/admin)" "2. Custom URL với IP:Port (ví dụ: 34.81.56.243:8080/)")
+  else
+    echo "1. Domain-based (ví dụ: vinainbox.com/admin)"
+    echo "2. Custom URL với IP:Port (ví dụ: 34.81.56.243:8080/)"
+    read -p "Chọn [1/2]: " url_choice
+    url_type="1. Domain-based"
+    [ "$url_choice" = "2" ] && url_type="2. Custom URL với IP:Port"
+  fi
+  
+  if [[ "$url_type" == *"Custom"* ]]; then
+    # Custom URL mode
+    if $use_gum; then
+      custom_url=$(gum input --placeholder "Nhập custom URL (ví dụ: http://34.81.56.243:8080/ hoặc 34.81.56.243:8080/)")
+    else
+      read -p "Nhập custom URL (ví dụ: http://34.81.56.243:8080/): " custom_url
+    fi
+    
+    if [ -z "$custom_url" ]; then
+      log_error "URL không được để trống!"
+      return 1
+    fi
+    
+    # Extract IP:port and path
+    if [[ "$custom_url" =~ ^https?:// ]]; then
+      custom_url=${custom_url#http://}
+      custom_url=${custom_url#https://}
+    fi
+    
+    # Split into IP:port and path
+    IFS='/' read -r ip_port path_part <<< "$custom_url"
+    
+    # Find nginx config that matches this IP:port
+    config_file=""
+    # Check all nginx configs for matching listen directive
+    for conf in /etc/nginx/sites-available/*.conf; do
+      if [ -f "$conf" ]; then
+        # Check if config has matching listen directive
+        if grep -q "listen.*$ip_port" "$conf"; then
+          config_file="$conf"
+          break
+        fi
+      fi
+    done
+    
+    # Also check sites-enabled
+    if [ -z "$config_file" ]; then
+      for conf in /etc/nginx/sites-enabled/*.conf; do
+        if [ -f "$conf" ]; then
+          if grep -q "listen.*$ip_port" "$conf"; then
+            config_file="$conf"
+            break
+          fi
+        fi
+      done
+    fi
+    
+    # If no exact match, try to find by port only
+    if [ -z "$config_file" ]; then
+      port=$(echo "$ip_port" | grep -oP ':\K[0-9]+')
+      if [ -n "$port" ]; then
+        for conf in /etc/nginx/sites-available/*.conf; do
+          if [ -f "$conf" ] && grep -q "listen.*$port" "$conf"; then
+            config_file="$conf"
+            log_warn "⚠️  Không tìm thấy exact match, sử dụng config có port $port"
+            break
+          fi
+        done
+      fi
+    fi
+    
+    if [ -z "$config_file" ]; then
+      log_error "❌ Không tìm thấy nginx config cho URL: $custom_url"
+      log_info "💡 Kiểm tra lại URL hoặc IP:Port"
+      return 1
+    fi
+    
+    # Use root path if no path specified
+    path=${path_part:-/}
+    
+  else
+    # Domain-based mode
+    # Get domain
+    if $use_gum; then
+      domain=$(gum input --placeholder "Nhập domain (ví dụ: vinainbox.com)")
+    else
+      read -p "Nhập domain (ví dụ: vinainbox.com): " domain
+    fi
+    
+    if [ -z "$domain" ]; then
+      log_error "Domain không được để trống!"
+      return 1
+    fi
+    
+    # Check if domain config exists
+    if [ ! -f "/etc/nginx/sites-available/${domain}.conf" ]; then
+      log_error "❌ Không tìm thấy config cho domain: $domain"
+      log_info "💡 Hãy tạo website trước với menu option 1"
+      return 1
+    fi
+    
+    config_file="/etc/nginx/sites-available/${domain}.conf"
+    
+    # Get path to protect
+    if $use_gum; then
+      path=$(gum input --placeholder "Nhập path cần bảo vệ (ví dụ: /admin)" --value "/admin")
+    else
+      read -p "Nhập path cần bảo vệ (ví dụ: /admin) [/admin]: " path
+      path=${path:-/admin}
+    fi
+    
+    # Use domain as identifier
+    ip_port="$domain"
+  fi
+  
+  # Ensure path starts with /
+  if [[ ! "$path" =~ ^/ ]]; then
+    path="/$path"
+  fi
+  
+  # Get location identifier for filename
+  location_id=$(echo "${ip_port}${path}" | tr '/:' '_' | sed 's/__*/_/g')
+  
+  # Get username
+  if $use_gum; then
+    username=$(gum input --placeholder "Username để đăng nhập")
+  else
+    read -p "Username để đăng nhập: " username
+  fi
+  
+  if [ -z "$username" ]; then
+    log_error "Username không được để trống!"
+    return 1
+  fi
+  
+  # Get password
+  if $use_gum; then
+    password=$(gum input --password --placeholder "Password")
+  else
+    read -sp "Password: " password
+    echo ""
+  fi
+  
+  if [ -z "$password" ]; then
+    log_error "Password không được để trống!"
+    return 1
+  fi
+  
+  # Install apache2-utils if not exists
+  if ! command_exists htpasswd; then
+    log_info "📦 Đang cài đặt apache2-utils..."
+    apt-get update -qq
+    apt-get install -y apache2-utils
+  fi
+  
+  # Create htpasswd directory if not exists
+  htpasswd_dir="/etc/nginx/htpasswd"
+  mkdir -p "$htpasswd_dir"
+  
+  # Create or update .htpasswd file with location_id
+  htpasswd_file="$htpasswd_dir/${location_id}.htpasswd"
+  
+  log_info "🔐 Đang tạo password file..."
+  if [ -f "$htpasswd_file" ]; then
+    # Add user to existing file or update password
+    log_warn "⚠️  File password đã tồn tại, đang cập nhật..."
+  fi
+  
+  # Create or update htpasswd file
+  htpasswd -b "$htpasswd_file" "$username" "$password"
+  
+  if [ ! $? -eq 0 ]; then
+    log_error "❌ Không thể tạo password file"
+    return 1
+  fi
+  
+  # Backup Nginx config
+  cp "$config_file" "${config_file}.bak"
+  
+  log_info "🔧 Đang cập nhật Nginx config..."
+  
+  # Check if location block with auth already exists for this path
+  if grep -q "location.*$path" "$config_file" && grep -A5 "location.*$path" "$config_file" | grep -q "auth_basic"; then
+    log_warn "⚠️  URL này đã được bảo vệ, đang cập nhật mật khẩu mới..."
+    # Remove existing location block to replace with new one
+    # Create temp file without the old location block
+    awk -v path="$path" '
+    BEGIN { in_location=0; skip_block=0; depth=0 }
+    {
+      # Detect location block start
+      if (/location.*{/ && $0 ~ path "[[:space:]]*{" || $0 ~ path "[[:space:]]*\\{") {
+        skip_block=1
+        in_location=1
+        next
+      }
+      
+      # Track braces in location block
+      if (skip_block) {
+        if (/{/) depth++
+        if (/}/) {
+          depth--
+          if (depth <= 0) {
+            skip_block=0
+            in_location=0
+            depth=0
+          }
+        }
+        next
+      }
+      
+      print
+    }
+    ' "$config_file" > "${config_file}.tmp"
+    mv "${config_file}.tmp" "$config_file"
+  fi
+  
+  # Add new location block with password protection
+  # Simply append before the closing server brace (simple approach)
+  # Get the line number of the last closing brace
+  
+  # Find the last closing brace (should be server block closing)
+  last_brace_line=$(grep -n "^}" "$config_file" | tail -1 | cut -d: -f1)
+  
+  if [ -n "$last_brace_line" ]; then
+    # Insert location block before the last brace
+    # Take everything before last brace
+    head -n $((last_brace_line - 1)) "$config_file" > "${config_file}.tmp"
+    
+    # Add the location block
+    cat >> "${config_file}.tmp" <<EOF
+    # Password protected location: $path
+    location $path {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+  else
+    # Fallback: just append at the end
+    cat >> "$config_file" <<EOF
+
+    # Password protected location: $path
+    location $path {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        try_files \$uri \$uri/ =404;
+    }
+EOF
+    cp "$config_file" "${config_file}.tmp"
+  fi
+  
+  mv "${config_file}.tmp" "$config_file"
+  
+  # Test Nginx config
+  if nginx -t &>/dev/null; then
+    systemctl reload nginx
+    rm -f "${config_file}.bak"
+    
+    echo ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ BẢO MẬT URL THÀNH CÔNG!"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "🔒 Protected URL: ${ip_port}${path}"
+    log_info "👤 Username: $username"
+    log_info "📁 Password file: $htpasswd_file"
+    log_info "📝 Config file: $config_file"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "💡 Giờ khi truy cập URL sẽ yêu cầu nhập password"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  else
+    log_error "❌ Nginx config có lỗi, rollback..."
+    mv "${config_file}.bak" "$config_file"
+    systemctl reload nginx
+    rm -f "$htpasswd_file"
+    return 1
+  fi
+}
+
+# Remove URL password protection
+remove_url_password() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🗑️  XÓA BẢO MẬT URL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Ask for URL type
+  echo "Chọn loại URL cần xóa bảo vệ:"
+  if $use_gum; then
+    url_type=$(gum choose "1. Domain-based (ví dụ: vinainbox.com/admin)" "2. Custom URL với IP:Port (ví dụ: 34.81.56.243:8080/)")
+  else
+    echo "1. Domain-based (ví dụ: vinainbox.com/admin)"
+    echo "2. Custom URL với IP:Port (ví dụ: 34.81.56.243:8080/)"
+    read -p "Chọn [1/2]: " url_choice
+    url_type="1. Domain-based"
+    [ "$url_choice" = "2" ] && url_type="2. Custom URL với IP:Port"
+  fi
+  
+  if [[ "$url_type" == *"Custom"* ]]; then
+    # Custom URL mode
+    if $use_gum; then
+      custom_url=$(gum input --placeholder "Nhập custom URL (ví dụ: http://34.81.56.243:8080/ hoặc 34.81.56.243:8080/)")
+    else
+      read -p "Nhập custom URL (ví dụ: http://34.81.56.243:8080/): " custom_url
+    fi
+    
+    if [ -z "$custom_url" ]; then
+      log_error "URL không được để trống!"
+      return 1
+    fi
+    
+    # Extract IP:port and path
+    if [[ "$custom_url" =~ ^https?:// ]]; then
+      custom_url=${custom_url#http://}
+      custom_url=${custom_url#https://}
+    fi
+    
+    # Split into IP:port and path
+    IFS='/' read -r ip_port path_part <<< "$custom_url"
+    
+    # Use root path if no path specified
+    path=${path_part:-/}
+    
+    # Find nginx config that matches this IP:port
+    config_file=""
+    port=$(echo "$ip_port" | grep -oP ':\K[0-9]+')
+    if [ -n "$port" ]; then
+      for conf in /etc/nginx/sites-available/*.conf; do
+        if [ -f "$conf" ] && grep -q "listen.*$port" "$conf"; then
+          config_file="$conf"
+          break
+        fi
+      done
+    fi
+    
+    if [ -z "$config_file" ]; then
+      log_error "❌ Không tìm thấy nginx config cho URL"
+      return 1
+    fi
+    
+  else
+    # Domain-based mode
+    # Get domain
+    if $use_gum; then
+      domain=$(gum input --placeholder "Nhập domain")
+    else
+      read -p "Nhập domain: " domain
+    fi
+    
+    if [ -z "$domain" ]; then
+      log_error "Domain không được để trống!"
+      return 1
+    fi
+    
+    # Check if domain config exists
+    if [ ! -f "/etc/nginx/sites-available/${domain}.conf" ]; then
+      log_error "❌ Không tìm thấy config cho domain: $domain"
+      return 1
+    fi
+    
+    config_file="/etc/nginx/sites-available/${domain}.conf"
+    
+    # Get path
+    if $use_gum; then
+      path=$(gum input --placeholder "Nhập path cần xóa bảo vệ (ví dụ: /admin)")
+    else
+      read -p "Nhập path cần xóa bảo vệ (ví dụ: /admin): " path
+    fi
+    
+    if [ -z "$path" ]; then
+      log_error "Path không được để trống!"
+      return 1
+    fi
+    
+    ip_port="$domain"
+  fi
+  
+  # Ensure path starts with /
+  if [[ ! "$path" =~ ^/ ]]; then
+    path="/$path"
+  fi
+  
+  # Create location_id for htpasswd filename
+  location_id=$(echo "${ip_port}${path}" | tr '/:' '_' | sed 's/__*/_/g')
+  
+  # Check if protection exists
+  if ! grep -q "location.*$path" "$config_file"; then
+    log_warn "⚠️  Không tìm thấy bảo vệ cho ${ip_port}${path}"
+    return 1
+  fi
+  
+  # Backup config
+  cp "$config_file" "${config_file}.bak"
+  
+  log_info "🗑️  Đang xóa password protection..."
+  
+  # Remove the location block with auth
+  # This is a simplified approach - remove the entire location block
+  awk -v path="$path" '
+  BEGIN { in_location=0; skip_block=0 }
+  {
+    # Detect location block start
+    if (/location.*\{/ && $0 ~ path) {
+      in_location=1
+      skip_block=1
+      next
+    }
+    
+    # Skip everything in the block
+    if (skip_block) {
+      # Track braces
+      if (/\{/) {
+        depth++
+      }
+      if (/\}/) {
+        depth--
+        if (depth <= 0) {
+          in_location=0
+          skip_block=0
+          depth=0
+        }
+      }
+      next
+    }
+    
+    print
+  }
+  ' "$config_file" > "${config_file}.tmp"
+  
+  mv "${config_file}.tmp" "$config_file"
+  
+  # Test Nginx config
+  if nginx -t &>/dev/null; then
+    systemctl reload nginx
+    rm -f "${config_file}.bak"
+    
+    # Also remove htpasswd file if exists
+    htpasswd_file="/etc/nginx/htpasswd/${location_id}.htpasswd"
+    if [ -f "$htpasswd_file" ]; then
+      rm -f "$htpasswd_file"
+      log_info "🗑️  Đã xóa password file: $htpasswd_file"
+    fi
+    
+    echo ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ ĐÃ XÓA BẢO MẬT THÀNH CÔNG!"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "🔓 URL đã mở: ${ip_port}${path}"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  else
+    log_error "❌ Nginx config có lỗi, rollback..."
+    mv "${config_file}.bak" "$config_file"
+    systemctl reload nginx
+    return 1
+  fi
 }
 
 # ------------------------------------------------------
