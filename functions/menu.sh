@@ -1402,18 +1402,24 @@ protect_url_with_password() {
   htpasswd_file="$htpasswd_dir/${location_id}.htpasswd"
   
   log_info "🔐 Đang tạo password file..."
-  if [ -f "$htpasswd_file" ]; then
-    # Add user to existing file or update password
-    log_warn "⚠️  File password đã tồn tại, đang cập nhật..."
-  fi
   
-  # Create or update htpasswd file
-  htpasswd -b "$htpasswd_file" "$username" "$password"
+  # Check if file exists to determine if we need -c flag
+  if [ -f "$htpasswd_file" ]; then
+    log_warn "⚠️  File password đã tồn tại, đang cập nhật password cho user: $username"
+    # File exists, just update/add user
+    htpasswd -b "$htpasswd_file" "$username" "$password"
+  else
+    log_info "📝 Tạo file password mới: $htpasswd_file"
+    # File doesn't exist, create it with -c flag
+    htpasswd -bc "$htpasswd_file" "$username" "$password"
+  fi
   
   if [ ! $? -eq 0 ]; then
-    log_error "❌ Không thể tạo password file"
+    log_error "❌ Không thể tạo/cập nhật password file"
     return 1
   fi
+  
+  log_info "✅ Password file đã được tạo/cập nhật thành công"
   
   # Backup Nginx config
   cp "$config_file" "${config_file}.bak"
