@@ -1475,11 +1475,14 @@ protect_url_with_password() {
     
     # Add the location block
     cat >> "${config_file}.tmp" <<EOF
+    
     # Password protected location: $path
     location $path {
         auth_basic "Restricted Area";
         auth_basic_user_file $htpasswd_file;
         
+        # Allow existing content to work
+        index index.html index.php;
         try_files \$uri \$uri/ =404;
     }
 }
@@ -1493,6 +1496,8 @@ EOF
         auth_basic "Restricted Area";
         auth_basic_user_file $htpasswd_file;
         
+        # Allow existing content to work
+        index index.html index.php;
         try_files \$uri \$uri/ =404;
     }
 EOF
@@ -1501,9 +1506,34 @@ EOF
   
   mv "${config_file}.tmp" "$config_file"
   
+  # Debug: Show what was added
+  log_info "📋 Đã thêm location block bảo vệ path: $path"
+  log_info "📋 Config file: $config_file"
+  log_info "📋 Htpasswd file: $htpasswd_file"
+  
+  # Show the added location block for verification
+  log_info ""
+  log_info "📝 Location block đã được thêm:"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if grep -A10 "location.*$path" "$config_file" 2>/dev/null | head -15; then
+    echo ""
+    log_info "✅ Location block đã được thêm đúng vào nginx config"
+  else
+    log_warn "⚠️  Không thấy location block trong config"
+    log_warn "📁 Kiểm tra file: $config_file"
+  fi
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  log_info ""
+  
   # Test Nginx config
-  if nginx -t &>/dev/null; then
+  log_info "🔍 Đang kiểm tra nginx config..."
+  nginx_test_output=$(nginx -t 2>&1)
+  nginx_test_status=$?
+  
+  if [ $nginx_test_status -eq 0 ]; then
+    log_info "✅ Nginx config hợp lệ"
     systemctl reload nginx
+    log_info "🔄 Đã reload nginx"
     rm -f "${config_file}.bak"
     
     echo ""
@@ -1518,7 +1548,9 @@ EOF
     log_info "💡 Giờ khi truy cập URL sẽ yêu cầu nhập password"
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   else
-    log_error "❌ Nginx config có lỗi, rollback..."
+    log_error "❌ Nginx config có lỗi!"
+    echo "$nginx_test_output"
+    log_error "Rollback config..."
     mv "${config_file}.bak" "$config_file"
     systemctl reload nginx
     rm -f "$htpasswd_file"
