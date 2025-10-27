@@ -1030,6 +1030,11 @@ server {
     listen $fb_port;
     server_name _;
     
+    # Increase buffer sizes to avoid "Request Header Too Large" error
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 16k;
+    client_max_body_size 0;  # Allow large file uploads
+    
     # HTTP Basic Auth
     auth_basic "Restricted Area - FileBrowser";
     auth_basic_user_file $htpasswd_file;
@@ -1046,6 +1051,11 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 86400;
+        
+        # Buffer settings for large requests
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
     }
 }
 EOF
