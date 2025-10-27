@@ -988,6 +988,27 @@ protect_filemanager_with_http_auth() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   
+  # Check if already protected
+  if [ -f "/etc/nginx/sites-available/filebrowser.conf" ]; then
+    log_warn "⚠️  FileBrowser đã được bảo vệ với HTTP Auth!"
+    read -p "Bạn có muốn thay đổi password HTTP Auth? (y/n): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      return 0
+    fi
+    log_info "🔄 Đang xóa HTTP Auth cũ..."
+    rm -f /etc/nginx/sites-available/filebrowser.conf
+    rm -f /etc/nginx/sites-enabled/filebrowser.conf
+    systemctl stop filebrowser
+    sleep 2
+    # Reset FileBrowser to public
+    cd /etc/filebrowser
+    local fb_port=${CONFIG_filemanager_port:-8080}
+    filebrowser config set --address 0.0.0.0 --port $fb_port --database /etc/filebrowser/filebrowser.db 2>/dev/null
+    systemctl start filebrowser
+    log_info "✅ Đã reset FileBrowser về public mode"
+    sleep 2
+  fi
+  
   if ! service_is_active filebrowser; then
     log_error "❌ FileBrowser không đang chạy"
     log_info "💡 Hãy start FileBrowser trước với menu option 2"
@@ -1108,58 +1129,48 @@ EOF
     # Update config (must be done while stopped)
     log_info "🔧 Đang update config..."
     cd /etc/filebrowser
-    if filebrowser config set --address 127.0.0.1 --port $fb_port --database /etc/filebrowser/filebrowser.db 2>&1 | tee /tmp/filebrowser_config.log; then
+    if filebrowser config set --address 127.0.0.1 --port $fb_port --database /etc/filebrowser/filebrowser.db; then
       log_info "✅ Config updated successfully"
     else
-      log_warn "⚠️  Config update có lỗi, xem log: /tmp/filebrowser_config.log"
-      cat /tmp/filebrowser_config.log
+      log_warn "⚠️  Config update có lỗi, tiếp tục thử..."
     fi
     
-    # Verify config
-    log_info "🔍 Verifying config..."
-    if filebrowser config cat --database /etc/filebrowser/filebrowser.db | grep -q "address.*127.0.0.1"; then
-      log_info "✅ Config verified: address = 127.0.0.1"
-    else
-      log_warn "⚠️  Config verification failed"
-      log_info "Current config:"
-      filebrowser config cat --database /etc/filebrowser/filebrowser.db | grep address || true
-    fi
-    
-    # Restart FileBrowser
-    log_info "🔄 Đang start FileBrowser..."
+    # Start FileBrowser on localhost
+    log_info "🔄 Đang start FileBrowser trên localhost..."
     systemctl start filebrowser
-    sleep 4
+    sleep 3
     
-    # Verify FileBrowser is running on 127.0.0.1
-    if netstat -tlnp 2>/dev/null | grep -q "127.0.0.1:$fb_port"; then
-      log_info "✅ FileBrowser đang listen trên 127.0.0.1:$fb_port"
+    # Verify FileBrowser started successfully
+    if service_is_active filebrowser; then
+      log_info "✅ FileBrowser đã start thành công"
+      
+      # Check if listening on localhost
+      if netstat -tlnp 2>/dev/null | grep -q "127.0.0.1:$fb_port"; then
+        log_info "✅ FileBrowser đang listen trên 127.0.0.1:$fb_port"
+      else
+        log_warn "⚠️  Kiểm tra lại listening address"
+        netstat -tlnp 2>/dev/null | grep "$fb_port" || true
+      fi
+      
+      # Check if Nginx is listening on the port
+      if netstat -tlnp 2>/dev/null | grep ":$fb_port" | grep -q nginx; then
+        local server_ip=$(hostname -I | awk '{print $1}')
+        log_info ""
+        log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_info "✅ HOÀN TẤT!"
+        log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_info "🔒 FileBrowser được bảo vệ bởi HTTP Basic Auth"
+        log_info "🌐 URL: http://${server_ip}:$fb_port"
+        log_info "👤 HTTP Auth Username: $username"
+        log_info "💡 Sau HTTP Auth, bạn cần login vào FileBrowser (built-in)"
+        log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      else
+        log_warn "⚠️  Nginx chưa bind port, kiểm tra log:"
+        systemctl status nginx | tail -10
+      fi
     else
-      log_warn "⚠️  FileBrowser có thể chưa listen đúng"
-    fi
-    
-    # Check ports before reload
-    log_info "📊 Checking ports..."
-    netstat -tlnp 2>/dev/null | grep ":$fb_port" || log_warn "   Không tìm thấy process đang listen port $fb_port"
-    
-    # Reload Nginx to ensure new config is active
-    log_info "🔄 Reloading nginx..."
-    systemctl reload nginx
-    sleep 2
-    
-    # Check if Nginx is listening on the port
-    log_info "📊 Checking ports after reload..."
-    netstat -tlnp 2>/dev/null | grep ":$fb_port" || log_warn "   Vẫn chưa có process listen port $fb_port"
-    
-    if netstat -tlnp 2>/dev/null | grep -q ":$fb_port" && systemctl is-active --quiet nginx; then
-      local server_ip=$(hostname -I | awk '{print $1}')
-      log_info ""
-      log_info "✅ HOÀN TẤT! Access FileBrowser:"
-      log_info "   http://${server_ip}:$fb_port"
-      log_info "   (Sẽ yêu cầu HTTP Auth - username: $username)"
-    else
-      log_warn "⚠️  Kiểm tra services"
-      log_info "   FileBrowser status: $(systemctl is-active filebrowser)"
-      log_info "   Nginx status: $(systemctl is-active nginx)"
+      log_error "❌ FileBrowser không start được"
+      journalctl -u filebrowser -n 20 --no-pager
     fi
   else
     log_error "❌ Nginx config có lỗi"
