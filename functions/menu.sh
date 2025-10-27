@@ -1071,20 +1071,63 @@ EOF
     # Update FileBrowser config to listen only on localhost
     log_info ""
     log_info "🔄 Đang cấu hình FileBrowser listen localhost only..."
-    cd /etc/filebrowser
-    filebrowser config set --address 127.0.0.1 --database /etc/filebrowser/filebrowser.db
-    systemctl restart filebrowser
     
+    # Stop FileBrowser first
+    log_info "⏹️  Đang stop FileBrowser..."
+    systemctl stop filebrowser
+    sleep 3
+    
+    # Kill any remaining processes
+    pkill -f filebrowser 2>/dev/null
     sleep 2
     
-    if service_is_active filebrowser && systemctl is-active --quiet nginx; then
+    # Update config (must be done while stopped)
+    log_info "🔧 Đang update config..."
+    cd /etc/filebrowser
+    if filebrowser config set --address 127.0.0.1 --port $fb_port --database /etc/filebrowser/filebrowser.db 2>&1 | tee /tmp/filebrowser_config.log; then
+      log_info "✅ Config updated successfully"
+    else
+      log_warn "⚠️  Config update có lỗi, xem log: /tmp/filebrowser_config.log"
+      cat /tmp/filebrowser_config.log
+    fi
+    
+    # Verify config
+    log_info "🔍 Verifying config..."
+    if filebrowser config cat --database /etc/filebrowser/filebrowser.db | grep -q "address.*127.0.0.1"; then
+      log_info "✅ Config verified: address = 127.0.0.1"
+    else
+      log_warn "⚠️  Config verification failed"
+      log_info "Current config:"
+      filebrowser config cat --database /etc/filebrowser/filebrowser.db | grep address || true
+    fi
+    
+    # Restart FileBrowser
+    log_info "🔄 Đang start FileBrowser..."
+    systemctl start filebrowser
+    sleep 4
+    
+    # Verify FileBrowser is running on 127.0.0.1
+    if netstat -tlnp 2>/dev/null | grep -q "127.0.0.1:$fb_port"; then
+      log_info "✅ FileBrowser đang listen trên 127.0.0.1:$fb_port"
+    else
+      log_warn "⚠️  FileBrowser có thể chưa listen đúng"
+    fi
+    
+    # Reload Nginx to ensure new config is active
+    systemctl reload nginx
+    sleep 1
+    
+    # Check if Nginx is listening on the port
+    if netstat -tlnp 2>/dev/null | grep -q ":$fb_port" && systemctl is-active --quiet nginx; then
       local server_ip=$(hostname -I | awk '{print $1}')
       log_info ""
       log_info "✅ HOÀN TẤT! Access FileBrowser:"
       log_info "   http://${server_ip}:$fb_port"
-      log_info "   (Sẽ yêu cầu HTTP Auth)"
+      log_info "   (Sẽ yêu cầu HTTP Auth - username: $username)"
     else
       log_warn "⚠️  Kiểm tra services"
+      log_info "   FileBrowser status: $(systemctl is-active filebrowser)"
+      log_info "   Nginx status: $(systemctl is-active nginx)"
     fi
   else
     log_error "❌ Nginx config có lỗi"
