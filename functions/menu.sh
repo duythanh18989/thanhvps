@@ -245,24 +245,26 @@ show_deploy_menu() {
     choice=$(gum choose \
       "1  Deploy NodeJS App (Express/NestJS/Next.js)" \
       "2  Deploy PHP Website (Laravel/WordPress)" \
-      "3  Danh sach websites da deploy" \
-      "4  Them alias/domain phu cho site" \
-      "5  Doi PHP version cho site" \
-      "6  Fix permissions cho website" \
-      "7  Xoa website da deploy" \
-      "8  Quan ly NodeJS (PM2/Versions)" \
-      "9  Quay lai")
+      "3  Deploy Redis Queue System (Monitoring Dashboard)" \
+      "4  Danh sach websites da deploy" \
+      "5  Them alias/domain phu cho site" \
+      "6  Doi PHP version cho site" \
+      "7  Fix permissions cho website" \
+      "8  Xoa website da deploy" \
+      "9  Quan ly NodeJS (PM2/Versions)" \
+      "0  Quay lai")
   else
     choice=$(whiptail --title "Deploy Website" --menu "Chon loai:" 22 70 12 \
       "1" "Deploy NodeJS App" \
       "2" "Deploy PHP Website" \
-      "3" "Danh sach websites" \
-      "4" "Them alias/domain phu" \
-      "5" "Doi PHP version" \
-      "6" "Fix permissions" \
-      "7" "Xoa website" \
-      "8" "Quan ly NodeJS" \
-      "9" "Quay lai" 3>&1 1>&2 2>&3)
+      "3" "Deploy Redis Queue System" \
+      "4" "Danh sach websites" \
+      "5" "Them alias/domain phu" \
+      "6" "Doi PHP version" \
+      "7" "Fix permissions" \
+      "8" "Xoa website" \
+      "9" "Quan ly NodeJS" \
+      "0" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -270,13 +272,14 @@ show_deploy_menu() {
   case "$num" in
     1) deploy_nodejs_app; read -p "Press Enter to continue..."; show_deploy_menu ;;
     2) deploy_php_website; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    3) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    4) add_site_alias; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    5) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    6) fix_site_permissions; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    7) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
-    8) show_nodejs_menu; show_deploy_menu ;;
-    9|"") show_main_menu ;;
+    3) deploy_redis_queue_system; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    4) list_deployed_sites; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    5) add_site_alias; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    6) change_site_php_version; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    7) fix_site_permissions; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    8) remove_deployed_site; read -p "Press Enter to continue..."; show_deploy_menu ;;
+    9) show_nodejs_menu; show_deploy_menu ;;
+    0|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_deploy_menu ;;
   esac
 }
@@ -1431,6 +1434,41 @@ protect_url_with_password() {
   
   log_info "🔧 Đang cập nhật Nginx config..."
   
+  # Special handling for root path: remove existing PHP location block to replace with auth version
+  if [ "$path" = "/" ]; then
+    log_info "🔍 Đang xóa location block .php$ cũ để thay thế bằng version có auth..."
+    
+    # Remove existing PHP location block
+    awk '
+    BEGIN { in_php_location=0; skip_block=0; depth=0 }
+    {
+      # Detect PHP location block start
+      if (/location[[:space:]]+~[[:space:]]+\\\.php\$/) {
+        skip_block=1
+        depth=1
+        next
+      }
+      
+      # Track braces in PHP location block
+      if (skip_block) {
+        if (/{/) depth++
+        if (/}/) {
+          depth--
+          if (depth <= 0) {
+            skip_block=0
+            depth=0
+          }
+        }
+        next
+      }
+      
+      print
+    }
+    ' "$config_file" > "${config_file}.tmp"
+    mv "${config_file}.tmp" "$config_file"
+    log_info "✅ Đã xóa location block .php$ cũ"
+  fi
+  
   # Check if location block with auth already exists for this path
   if grep -A5 "location.*$path" "$config_file" | grep -q "auth_basic"; then
     log_warn "⚠️  URL này đã được bảo vệ (có auth_basic), đang xóa location block cũ để thêm lại..."
@@ -1521,6 +1559,31 @@ protect_url_with_password() {
   # Insert location block before the closing brace
   head -n $((target_line - 1)) "$config_file" > "${config_file}.tmp"
   
+  # Check if we need to protect PHP files too (when path is root)
+  if [ "$path" = "/" ]; then
+    log_info "🔒 Path là root, sẽ bảo vệ cả .php files"
+    
+    # Detect PHP version from existing config
+    php_version=$(grep -oP 'php\K[0-9.]+-fpm' "$config_file" | head -1 | cut -d'-' -f1)
+    php_version=${php_version:-8.2}  # Default to 8.2
+    
+    log_info "🐘 Detect PHP version: $php_version"
+    
+    # Add location block for PHP files with auth
+    cat >> "${config_file}.tmp" <<EOF
+    # Password protected PHP files
+    location ~ \.php$ {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${php_version}-fpm.sock;
+    }
+    
+EOF
+  fi
+  
+  # Add location block for the path
   cat >> "${config_file}.tmp" <<EOF
     # Password protected location: $path
     location $path {
@@ -1531,7 +1594,7 @@ protect_url_with_password() {
         index index.html index.php;
         try_files \$uri \$uri/ =404;
     }
-}
+    
 EOF
   
   # Add the rest of file after the closing brace (in case there are more server blocks after)

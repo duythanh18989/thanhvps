@@ -320,6 +320,27 @@ list_deployed_sites() {
   fi
 }
 
+# Deploy Redis Queue System
+deploy_redis_queue_system() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📊 DEPLOY REDIS QUEUE SYSTEM"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Check if script exists
+  if [ ! -f "$BASE_DIR/quick_deploy_all.sh" ]; then
+    log_error "❌ quick_deploy_all.sh không tìm thấy!"
+    echo "   Path: $BASE_DIR/quick_deploy_all.sh"
+    return 1
+  fi
+  
+  log_info "🚀 Bắt đầu deploy Redis Queue System..."
+  echo ""
+  
+  # Run quick_deploy_all script
+  bash "$BASE_DIR/quick_deploy_all.sh"
+}
+
 # Remove deployed site
 remove_deployed_site() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
