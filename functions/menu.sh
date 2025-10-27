@@ -830,10 +830,25 @@ install_filemanager() {
   if command_exists filebrowser && [ -f "/etc/filebrowser/filebrowser.db" ]; then
     log_warn "FileBrowser đã được cài đặt"
     read -p "Bạn có muốn cài lại không? (y/n): " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || return 0
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+      # If nginx is configured for FileBrowser, keep it
+      if [ -f "/etc/nginx/sites-available/filebrowser.conf" ]; then
+        log_info "🔄 FileBrowser sẽ được cấu hình để work với nginx reverse proxy"
+        install_filemanager
+        # After install, set to localhost
+        log_info "🔧 Setting FileBrowser to localhost..."
+        systemctl stop filebrowser 2>/dev/null
+        cd /etc/filebrowser
+        local fb_port=${CONFIG_filemanager_port:-8080}
+        filebrowser config set --address 127.0.0.1 --port $fb_port --database /etc/filebrowser/filebrowser.db 2>/dev/null
+        systemctl start filebrowser
+      else
+        install_filemanager
+      fi
+    fi
+  else
+    install_filemanager
   fi
-  
-  install_filemanager
 }
 
 toggle_filemanager() {
