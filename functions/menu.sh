@@ -1623,7 +1623,6 @@ EOF
         index index.php index.html index.htm;
         try_files \$uri \$uri/ /index.php?\$args;
     }
-    
 EOF
   else
     # For subdirectories, add new location block
@@ -1637,9 +1636,11 @@ EOF
         index index.html index.php;
         try_files \$uri \$uri/ /index.php?\$args;
     }
-    
 EOF
   fi
+  
+  # Add the closing brace of server block
+  echo "}" >> "${config_file}.tmp"
   
   # Add the rest of file after the closing brace (in case there are more server blocks after)
   if [ $target_line -lt $(wc -l < "$config_file") ]; then
