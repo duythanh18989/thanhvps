@@ -457,16 +457,18 @@ show_filemanager_menu() {
       "4  Đổi mật khẩu admin" \
       "5  Fix permissions (chuyển sang www-data)" \
       "6  Xem thông tin truy cập" \
-      "7  Quay lại")
+      "7  Bảo mật FileBrowser bằng password HTTP" \
+      "8  Quay lại")
   else
-    choice=$(whiptail --title "File Manager" --menu "Chon tac vu:" 20 70 10 \
+    choice=$(whiptail --title "File Manager" --menu "Chon tac vu:" 22 70 11 \
       "1" "Cai dat FileBrowser" \
       "2" "Start/Stop service" \
       "3" "Them user moi" \
       "4" "Doi mat khau" \
       "5" "Fix permissions" \
       "6" "Xem thong tin" \
-      "7" "Quay lai" 3>&1 1>&2 2>&3)
+      "7" "Bao mat FileBrowser bang HTTP password" \
+      "8" "Quay lai" 3>&1 1>&2 2>&3)
   fi
 
   local num=$(echo "$choice" | grep -o '^[0-9]*')
@@ -478,7 +480,8 @@ show_filemanager_menu() {
     4) change_filemanager_password; read -p "Press Enter to continue..."; show_filemanager_menu ;;
     5) fix_filemanager_user; read -p "Press Enter to continue..."; show_filemanager_menu ;;
     6) show_filemanager_info; read -p "Press Enter to continue..."; show_filemanager_menu ;;
-    7|"") show_main_menu ;;
+    7) protect_filemanager_with_http_auth; read -p "Press Enter to continue..."; show_filemanager_menu ;;
+    8|"") show_main_menu ;;
     *) log_error "Lua chon khong hop le!"; sleep 1; show_filemanager_menu ;;
   esac
 }
@@ -936,6 +939,17 @@ show_filemanager_info() {
       echo "  Reset password via menu option 4"
     fi
     
+    # Check if HTTP auth is enabled
+    if [ -f "/etc/nginx/sites-available/filebrowser.conf" ]; then
+      echo ""
+      echo "🔒 HTTP Basic Auth: ✅ Enabled"
+      echo "   This adds an extra layer of security"
+    else
+      echo ""
+      echo "🔒 HTTP Basic Auth: ⚠️  Not enabled"
+      echo "   Use menu option 7 to enable it"
+    fi
+    
     echo ""
     echo "📊 Statistics:"
     echo "  Database: /etc/filebrowser/filebrowser.db"
@@ -949,6 +963,134 @@ show_filemanager_info() {
     echo "Start it via menu option 2"
   fi
   echo ""
+}
+
+# Protect FileBrowser with HTTP Basic Auth
+protect_filemanager_with_http_auth() {
+  clear
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🔒 BẢO MẬT FILEBROWSER BẰNG HTTP AUTH"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  if ! service_is_active filebrowser; then
+    log_error "❌ FileBrowser không đang chạy"
+    log_info "💡 Hãy start FileBrowser trước với menu option 2"
+    return 1
+  fi
+  
+  # Get FileBrowser port
+  local fb_port=${CONFIG_filemanager_port:-8080}
+  log_info "📊 FileBrowser đang chạy trên port: $fb_port"
+  
+  # Get username and password for HTTP auth
+  if $use_gum; then
+    username=$(gum input --placeholder "Username cho HTTP Auth")
+    password=$(gum input --password --placeholder "Password cho HTTP Auth")
+  else
+    read -p "Username cho HTTP Auth: " username
+    read -sp "Password cho HTTP Auth: " password
+    echo ""
+  fi
+  
+  if [ -z "$username" ] || [ -z "$password" ]; then
+    log_error "❌ Username và password không được để trống!"
+    return 1
+  fi
+  
+  # Install apache2-utils if needed
+  if ! command_exists htpasswd; then
+    log_info "📦 Đang cài apache2-utils..."
+    apt-get update -qq
+    apt-get install -y apache2-utils
+  fi
+  
+  # Create htpasswd file
+  htpasswd_dir="/etc/nginx/htpasswd"
+  mkdir -p "$htpasswd_dir"
+  htpasswd_file="$htpasswd_dir/filebrowser.htpasswd"
+  
+  if [ -f "$htpasswd_file" ]; then
+    log_warn "⚠️  File password đã tồn tại, đang cập nhật..."
+    htpasswd -b "$htpasswd_file" "$username" "$password"
+  else
+    log_info "📝 Tạo file password mới..."
+    htpasswd -bc "$htpasswd_file" "$username" "$password"
+  fi
+  
+  chmod 644 "$htpasswd_file"
+  
+  # Create nginx config for FileBrowser with auth
+  config_file="/etc/nginx/sites-available/filebrowser.conf"
+  
+  log_info "🔧 Đang tạo Nginx reverse proxy cho FileBrowser..."
+  
+  cat > "$config_file" <<EOF
+server {
+    listen $fb_port;
+    server_name _;
+    
+    # HTTP Basic Auth
+    auth_basic "Restricted Area - FileBrowser";
+    auth_basic_user_file $htpasswd_file;
+    
+    location / {
+        proxy_pass http://127.0.0.1:$fb_port;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # WebSocket support (for FileBrowser)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+  
+  # Enable site
+  ln -sf "$config_file" /etc/nginx/sites-enabled/
+  
+  # Test nginx config
+  if nginx -t &>/dev/null; then
+    systemctl reload nginx
+    
+    log_info ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "✅ ĐÃ BẢO MẬT FILEBROWSER!"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "🔒 HTTP Basic Auth: Username: $username"
+    log_info "🌐 Giờ có 2 lớp bảo vệ:"
+    log_info "   1. HTTP Basic Auth (mới)"
+    log_info "   2. FileBrowser login (built-in)"
+    log_info "📁 Pass file: $htpasswd_file"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Update FileBrowser config to listen only on localhost
+    log_info ""
+    log_info "🔄 Đang cấu hình FileBrowser listen localhost only..."
+    cd /etc/filebrowser
+    filebrowser config set --address 127.0.0.1 --database /etc/filebrowser/filebrowser.db
+    systemctl restart filebrowser
+    
+    sleep 2
+    
+    if service_is_active filebrowser && systemctl is-active --quiet nginx; then
+      local server_ip=$(hostname -I | awk '{print $1}')
+      log_info ""
+      log_info "✅ HOÀN TẤT! Access FileBrowser:"
+      log_info "   http://${server_ip}:$fb_port"
+      log_info "   (Sẽ yêu cầu HTTP Auth)"
+    else
+      log_warn "⚠️  Kiểm tra services"
+    fi
+  else
+    log_error "❌ Nginx config có lỗi"
+    rm -f "$config_file" /etc/nginx/sites-enabled/filebrowser.conf
+    return 1
+  fi
 }
 
 # SSL functions (delegates to setup_ssl.sh)
