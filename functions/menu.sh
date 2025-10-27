@@ -1053,33 +1053,32 @@ EOF
   # Enable site
   ln -sf "$config_file" /etc/nginx/sites-enabled/
   
+  # CRITICAL: Stop FileBrowser BEFORE reloading nginx
+  log_info "⏹️  Đang stop FileBrowser để nginx có thể bind port $fb_port..."
+  systemctl stop filebrowser
+  pkill -f filebrowser 2>/dev/null
+  sleep 2
+  
   # Test nginx config
   if nginx -t &>/dev/null; then
+    log_info "✅ Nginx config hợp lệ"
     systemctl reload nginx
+    if [ $? -ne 0 ]; then
+      log_error "❌ Nginx reload failed"
+      systemctl status nginx | tail -20
+      # Restart FileBrowser on original config if nginx fails
+      systemctl start filebrowser
+      return 1
+    fi
     
     log_info ""
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "✅ ĐÃ BẢO MẬT FILEBROWSER!"
-    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info "🔒 HTTP Basic Auth: Username: $username"
-    log_info "🌐 Giờ có 2 lớp bảo vệ:"
-    log_info "   1. HTTP Basic Auth (mới)"
-    log_info "   2. FileBrowser login (built-in)"
-    log_info "📁 Pass file: $htpasswd_file"
+    log_info "✅ NGINX ĐÃ BIND PORT $fb_port!"
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     # Update FileBrowser config to listen only on localhost
     log_info ""
     log_info "🔄 Đang cấu hình FileBrowser listen localhost only..."
-    
-    # Stop FileBrowser first
-    log_info "⏹️  Đang stop FileBrowser..."
-    systemctl stop filebrowser
-    sleep 3
-    
-    # Kill any remaining processes
-    pkill -f filebrowser 2>/dev/null
-    sleep 2
     
     # Update config (must be done while stopped)
     log_info "🔧 Đang update config..."
@@ -1113,11 +1112,19 @@ EOF
       log_warn "⚠️  FileBrowser có thể chưa listen đúng"
     fi
     
+    # Check ports before reload
+    log_info "📊 Checking ports..."
+    netstat -tlnp 2>/dev/null | grep ":$fb_port" || log_warn "   Không tìm thấy process đang listen port $fb_port"
+    
     # Reload Nginx to ensure new config is active
+    log_info "🔄 Reloading nginx..."
     systemctl reload nginx
-    sleep 1
+    sleep 2
     
     # Check if Nginx is listening on the port
+    log_info "📊 Checking ports after reload..."
+    netstat -tlnp 2>/dev/null | grep ":$fb_port" || log_warn "   Vẫn chưa có process listen port $fb_port"
+    
     if netstat -tlnp 2>/dev/null | grep -q ":$fb_port" && systemctl is-active --quiet nginx; then
       local server_ip=$(hostname -I | awk '{print $1}')
       log_info ""
