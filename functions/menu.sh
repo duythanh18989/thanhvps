@@ -1434,22 +1434,22 @@ protect_url_with_password() {
   
   log_info "🔧 Đang cập nhật Nginx config..."
   
-  # Special handling for root path: remove existing PHP location block to replace with auth version
+  # Special handling for root path: remove existing location blocks
   if [ "$path" = "/" ]; then
-    log_info "🔍 Đang xóa location block .php$ cũ để thay thế bằng version có auth..."
+    log_info "🔍 Đang xóa location blocks cũ (/ và .php$) để thay thế bằng version có auth..."
     
-    # Remove existing PHP location block
+    # Remove location / block
     awk '
-    BEGIN { in_php_location=0; skip_block=0; depth=0 }
+    BEGIN { skip_block=0; depth=0 }
     {
-      # Detect PHP location block start
-      if (/location[[:space:]]+~[[:space:]]+\\\.php\$/) {
+      # Detect location / block start
+      if (/location[[:space:]]*\/[[:space:]]*\{/) {
         skip_block=1
         depth=1
         next
       }
       
-      # Track braces in PHP location block
+      # Track braces
       if (skip_block) {
         if (/{/) depth++
         if (/}/) {
@@ -1464,9 +1464,37 @@ protect_url_with_password() {
       
       print
     }
-    ' "$config_file" > "${config_file}.tmp"
+    ' "$config_file" > "${config_file}.tmp1"
+    
+    # Remove location ~ \.php$ block
+    awk '
+    BEGIN { skip_block=0; depth=0 }
+    {
+      if (/location[[:space:]]+~[[:space:]]+\\\.php\$/) {
+        skip_block=1
+        depth=1
+        next
+      }
+      
+      if (skip_block) {
+        if (/{/) depth++
+        if (/}/) {
+          depth--
+          if (depth <= 0) {
+            skip_block=0
+            depth=0
+          }
+        }
+        next
+      }
+      
+      print
+    }
+    ' "${config_file}.tmp1" > "${config_file}.tmp"
+    
+    rm -f "${config_file}.tmp1"
     mv "${config_file}.tmp" "$config_file"
-    log_info "✅ Đã xóa location block .php$ cũ"
+    log_info "✅ Đã xóa location blocks cũ (/ và .php$)"
   fi
   
   # Check if location block with auth already exists for this path
@@ -1584,7 +1612,22 @@ EOF
   fi
   
   # Add location block for the path
-  cat >> "${config_file}.tmp" <<EOF
+  if [ "$path" = "/" ]; then
+    # For root path, override the existing location /
+    cat >> "${config_file}.tmp" <<EOF
+    # Password protected root
+    location / {
+        auth_basic "Restricted Area";
+        auth_basic_user_file $htpasswd_file;
+        
+        index index.php index.html index.htm;
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+    
+EOF
+  else
+    # For subdirectories, add new location block
+    cat >> "${config_file}.tmp" <<EOF
     # Password protected location: $path
     location $path {
         auth_basic "Restricted Area";
@@ -1592,10 +1635,11 @@ EOF
         
         # Allow existing content to work
         index index.html index.php;
-        try_files \$uri \$uri/ =404;
+        try_files \$uri \$uri/ /index.php?\$args;
     }
     
 EOF
+  fi
   
   # Add the rest of file after the closing brace (in case there are more server blocks after)
   if [ $target_line -lt $(wc -l < "$config_file") ]; then
