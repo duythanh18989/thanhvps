@@ -1797,118 +1797,152 @@ protect_url_with_password() {
   fi
   
   # Add new location block with password protection
-  # Find the FIRST server block (main block, not redirect blocks)
-  log_info "🔍 Tìm vị trí phù hợp để thêm location block..."
+  # Find ALL main server blocks (HTTP port 80 and HTTPS port 443, but NOT redirect blocks)
+  log_info "🔍 Tìm tất cả server blocks cần thêm location..."
   
-  # Find line number of first "server {" block
-  server_start=$(grep -n "^server {" "$config_file" | head -1 | cut -d: -f1)
+  # Find all "server {" blocks and check if they are redirect blocks or main blocks
+  # Redirect blocks usually have only "if" statements and "return" directives
+  server_blocks=()
   
-  if [ -z "$server_start" ]; then
-    log_error "❌ Không tìm thấy server block trong config"
-    return 1
-  fi
-  
-  log_info "📝 Server block bắt đầu tại dòng: $server_start"
-  
-  # Find the closing brace of FIRST server block (not last one!)
-  # Count braces from server_start to find matching closing brace
-  target_line=$(awk -v start="$server_start" '
-    NR >= start {
-      for (i=1; i<=length($0); i++) {
-        c = substr($0, i, 1)
-        if (c == "{") depth++
-        if (c == "}") {
-          depth--
-          if (depth == 0) {
-            print NR
-            exit
+  while IFS= read -r line; do
+    line_num=$(echo "$line" | cut -d: -f1)
+    
+    # Find closing brace of this server block
+    closing_line=$(awk -v start="$line_num" '
+      NR >= start {
+        for (i=1; i<=length($0); i++) {
+          c = substr($0, i, 1)
+          if (c == "{") depth++
+          if (c == "}") {
+            depth--
+            if (depth == 0) {
+              print NR
+              exit
+            }
           }
         }
       }
-    }
-  ' "$config_file")
+    ' "$config_file")
+    
+    # Check if this is a redirect block (has "return 301" and no "location" blocks)
+    block_content=$(sed -n "${line_num},${closing_line}p" "$config_file")
+    
+    # Skip if it's a redirect-only block (has return 301 but no root/location directives)
+    if echo "$block_content" | grep -q "return 301" && ! echo "$block_content" | grep -q "root\|location"; then
+      log_info "⏭️  Bỏ qua redirect block tại dòng $line_num"
+      continue
+    fi
+    
+    # This is a main server block, add to list
+    server_blocks+=("$line_num:$closing_line")
+    log_info "✅ Tìm thấy main server block: dòng $line_num - $closing_line"
+    
+  done < <(grep -n "^server {" "$config_file")
   
-  if [ -z "$target_line" ]; then
-    log_error "❌ Không tìm thấy closing brace của server block đầu tiên"
+  if [ ${#server_blocks[@]} -eq 0 ]; then
+    log_error "❌ Không tìm thấy server block nào trong config"
     return 1
   fi
   
-  log_info "📝 Server block đầu tiên kết thúc tại dòng: $target_line"
-  log_info "📁 Sẽ thêm location block TRƯỚC dòng $target_line (bên TRONG server block)"
+  log_info "📝 Tìm thấy ${#server_blocks[@]} main server block(s) cần thêm location"
+  log_info "📁 Sẽ thêm location block vào TẤT CẢ các main server blocks (HTTP + HTTPS)"
   
-  # Insert location block before the closing brace
-  # Copy everything EXCEPT the closing brace line
-  head -n $((target_line - 1)) "$config_file" > "${config_file}.tmp"
+  # Prepare location block content to insert
+  # Detect PHP version from existing config
+  php_version=$(grep -oP 'php\K[0-9.]+-fpm' "$config_file" | head -1 | cut -d'-' -f1)
+  php_version=${php_version:-8.2}  # Default to 8.2
+  
+  # Build location block content
+  location_block=""
   
   # Check if we need to protect PHP files too (when path is root)
   if [ "$path" = "/" ]; then
     log_info "🔒 Path là root, sẽ bảo vệ cả .php files"
-    
-    # Detect PHP version from existing config
-    php_version=$(grep -oP 'php\K[0-9.]+-fpm' "$config_file" | head -1 | cut -d'-' -f1)
-    php_version=${php_version:-8.2}  # Default to 8.2
-    
     log_info "🐘 Detect PHP version: $php_version"
     
     # Add location block for PHP files with auth
-    cat >> "${config_file}.tmp" <<EOF
-
+    location_block+="
     # Password protected PHP files
-    location ~ \.php$ {
-        auth_basic "Restricted Area";
+    location ~ \.php\$ {
+        auth_basic \"Restricted Area\";
         auth_basic_user_file $htpasswd_file;
         
         try_files \$uri =404;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_split_path_info ^(.+\.php)(/.+)\$;
         fastcgi_pass unix:/run/php/php${php_version}-fpm.sock;
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_param PATH_INFO \$fastcgi_path_info;
     }
-EOF
+"
   fi
   
   # Add location block for the path
   if [ "$path" = "/" ]; then
     # For root path, override the existing location /
-    cat >> "${config_file}.tmp" <<EOF
-
+    location_block+="
     # Password protected root
     location / {
-        auth_basic "Restricted Area";
+        auth_basic \"Restricted Area\";
         auth_basic_user_file $htpasswd_file;
         
         index index.php index.html index.htm;
         try_files \$uri \$uri/ /index.php?\$args;
     }
-EOF
+"
   else
     # For subdirectories, add new location block
-    cat >> "${config_file}.tmp" <<EOF
-
+    location_block+="
     # Password protected location: $path
     location $path {
-        auth_basic "Restricted Area";
+        auth_basic \"Restricted Area\";
         auth_basic_user_file $htpasswd_file;
         
         # Allow existing content to work
         index index.html index.php;
         try_files \$uri \$uri/ /index.php?\$args;
     }
-EOF
+"
   fi
   
-  # Now add the closing brace from the original line (to preserve formatting)
-  sed -n "${target_line}p" "$config_file" >> "${config_file}.tmp"
+  # Now insert location block into ALL main server blocks
+  cp "$config_file" "${config_file}.tmp"
   
-  # Add the rest of file after the closing brace (in case there are more server blocks after)
-  if [ $target_line -lt $(wc -l < "$config_file") ]; then
-    tail -n +$((target_line + 1)) "$config_file" >> "${config_file}.tmp"
-  fi
+  for block_info in "${server_blocks[@]}"; do
+    start_line=$(echo "$block_info" | cut -d: -f1)
+    end_line=$(echo "$block_info" | cut -d: -f2)
+    
+    log_info "📝 Thêm location vào server block: dòng $start_line - $end_line"
+    
+    # Create new file with location block inserted before closing brace
+    {
+      # Copy lines before closing brace
+      head -n $((end_line - 1)) "${config_file}.tmp"
+      
+      # Add location block
+      echo "$location_block"
+      
+      # Copy from closing brace to end of file
+      tail -n +$end_line "${config_file}.tmp"
+    } > "${config_file}.tmp2"
+    
+    mv "${config_file}.tmp2" "${config_file}.tmp"
+    
+    # Update end_line for next iteration (file is now longer)
+    lines_added=$(echo "$location_block" | wc -l)
+    # Update remaining blocks' line numbers
+    for i in "${!server_blocks[@]}"; do
+      block_start=$(echo "${server_blocks[$i]}" | cut -d: -f1)
+      block_end=$(echo "${server_blocks[$i]}" | cut -d: -f2)
+      if [ "$block_start" -gt "$end_line" ]; then
+        server_blocks[$i]="$((block_start + lines_added)):$((block_end + lines_added))"
+      fi
+    done
+  done
   
   mv "${config_file}.tmp" "$config_file"
-  log_info "✅ Đã thêm location block vào TRONG server block đầu tiên"
+  log_info "✅ Đã thêm location block vào TẤT CẢ ${#server_blocks[@]} server block(s) (HTTP + HTTPS)"
   
   # Debug: Show what was added
   log_info "📋 Đã thêm location block bảo vệ path: $path"
