@@ -268,25 +268,39 @@ server {
     add_header X-Content-Type-Options "nosniff";
     add_header X-XSS-Protection "1; mode=block";
 
-    # ⚡ Gzip + Brotli
+    # ⚡ Gzip compression
     gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
     gzip_types text/plain text/css application/json application/javascript application/xml image/svg+xml;
     gzip_min_length 256;
-    brotli on;
-    brotli_comp_level 5;
-    brotli_types text/plain text/css application/json application/javascript application/xml image/svg+xml;
+
+    # 📁 Root location
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
 
     # 🧠 Static cache
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|woff2|ttf|svg)$ {
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|woff2|ttf|svg|webp)$ {
         expires 30d;
+        add_header Cache-Control "public, immutable";
         access_log off;
     }
 
     # 🧩 PHP handler
     location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
+        try_files \$uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass unix:/run/php/php${phpv}-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
         fastcgi_read_timeout 120s;
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 256 16k;
+        fastcgi_busy_buffers_size 256k;
+        fastcgi_temp_file_write_size 256k;
     }
 
     location ~ /\.ht {
