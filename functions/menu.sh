@@ -1797,24 +1797,47 @@ protect_url_with_password() {
   fi
   
   # Add new location block with password protection
-  # Find the server block that handles port 80/443
+  # Find the FIRST server block (main block, not redirect blocks)
   log_info "🔍 Tìm vị trí phù hợp để thêm location block..."
   
-  # Get all lines with "}" and get the last one that's on its own line
-  closing_braces=$(grep -n "^}" "$config_file" | cut -d: -f1)
+  # Find line number of first "server {" block
+  server_start=$(grep -n "^server {" "$config_file" | head -1 | cut -d: -f1)
   
-  if [ -z "$closing_braces" ]; then
-    log_error "❌ Không tìm thấy closing brace trong config"
+  if [ -z "$server_start" ]; then
+    log_error "❌ Không tìm thấy server block trong config"
     return 1
   fi
   
-  # Get the last closing brace (from last line of the ones found)
-  target_line=$(echo "$closing_braces" | tail -1)
+  log_info "📝 Server block bắt đầu tại dòng: $server_start"
   
-  log_info "📝 Vị trí đóng server block cuối cùng tại dòng: $target_line"
-  log_info "📁 Sẽ thêm location block TRƯỚC dòng $target_line"
+  # Find the closing brace of FIRST server block (not last one!)
+  # Count braces from server_start to find matching closing brace
+  target_line=$(awk -v start="$server_start" '
+    NR >= start {
+      for (i=1; i<=length($0); i++) {
+        c = substr($0, i, 1)
+        if (c == "{") depth++
+        if (c == "}") {
+          depth--
+          if (depth == 0) {
+            print NR
+            exit
+          }
+        }
+      }
+    }
+  ' "$config_file")
+  
+  if [ -z "$target_line" ]; then
+    log_error "❌ Không tìm thấy closing brace của server block đầu tiên"
+    return 1
+  fi
+  
+  log_info "📝 Server block đầu tiên kết thúc tại dòng: $target_line"
+  log_info "📁 Sẽ thêm location block TRƯỚC dòng $target_line (bên TRONG server block)"
   
   # Insert location block before the closing brace
+  # Copy everything EXCEPT the closing brace line
   head -n $((target_line - 1)) "$config_file" > "${config_file}.tmp"
   
   # Check if we need to protect PHP files too (when path is root)
@@ -1829,6 +1852,7 @@ protect_url_with_password() {
     
     # Add location block for PHP files with auth
     cat >> "${config_file}.tmp" <<EOF
+
     # Password protected PHP files
     location ~ \.php$ {
         auth_basic "Restricted Area";
@@ -1842,7 +1866,6 @@ protect_url_with_password() {
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_param PATH_INFO \$fastcgi_path_info;
     }
-    
 EOF
   fi
   
@@ -1850,6 +1873,7 @@ EOF
   if [ "$path" = "/" ]; then
     # For root path, override the existing location /
     cat >> "${config_file}.tmp" <<EOF
+
     # Password protected root
     location / {
         auth_basic "Restricted Area";
@@ -1862,6 +1886,7 @@ EOF
   else
     # For subdirectories, add new location block
     cat >> "${config_file}.tmp" <<EOF
+
     # Password protected location: $path
     location $path {
         auth_basic "Restricted Area";
@@ -1874,8 +1899,8 @@ EOF
 EOF
   fi
   
-  # Add the closing brace of server block
-  echo "}" >> "${config_file}.tmp"
+  # Now add the closing brace from the original line (to preserve formatting)
+  sed -n "${target_line}p" "$config_file" >> "${config_file}.tmp"
   
   # Add the rest of file after the closing brace (in case there are more server blocks after)
   if [ $target_line -lt $(wc -l < "$config_file") ]; then
@@ -1883,7 +1908,7 @@ EOF
   fi
   
   mv "${config_file}.tmp" "$config_file"
-  log_info "✅ Đã thêm location block vào trong server block"
+  log_info "✅ Đã thêm location block vào TRONG server block đầu tiên"
   
   # Debug: Show what was added
   log_info "📋 Đã thêm location block bảo vệ path: $path"
