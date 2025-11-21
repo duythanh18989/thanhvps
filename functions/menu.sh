@@ -1797,7 +1797,8 @@ protect_url_with_password() {
   fi
   
   # Add new location block with password protection
-  # SIMPLE APPROACH: Add before the LAST closing brace in the file
+  # Find the server block that handles port 80/443
+  log_info "🔍 Tìm vị trí phù hợp để thêm location block..."
   
   # Get all lines with "}" and get the last one that's on its own line
   closing_braces=$(grep -n "^}" "$config_file" | cut -d: -f1)
@@ -1811,6 +1812,7 @@ protect_url_with_password() {
   target_line=$(echo "$closing_braces" | tail -1)
   
   log_info "📝 Vị trí đóng server block cuối cùng tại dòng: $target_line"
+  log_info "📁 Sẽ thêm location block TRƯỚC dòng $target_line"
   
   # Insert location block before the closing brace
   head -n $((target_line - 1)) "$config_file" > "${config_file}.tmp"
@@ -1832,8 +1834,13 @@ protect_url_with_password() {
         auth_basic "Restricted Area";
         auth_basic_user_file $htpasswd_file;
         
-        include snippets/fastcgi-php.conf;
+        try_files \$uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass unix:/run/php/php${php_version}-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
     }
     
 EOF
@@ -1907,6 +1914,28 @@ EOF
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   log_info ""
   
+  # Verify htpasswd file
+  log_info "🔐 Kiểm tra htpasswd file..."
+  if [ -f "$htpasswd_file" ]; then
+    log_info "✅ File tồn tại: $htpasswd_file"
+    log_info "📋 Nội dung htpasswd (username only):"
+    cut -d: -f1 "$htpasswd_file" | while read user; do
+      log_info "   - $user"
+    done
+    
+    # Check file permissions
+    htpasswd_perms=$(stat -c "%a" "$htpasswd_file" 2>/dev/null || stat -f "%A" "$htpasswd_file" 2>/dev/null)
+    log_info "🔑 Permissions: $htpasswd_perms"
+    
+    if [ "$htpasswd_perms" != "644" ]; then
+      log_warn "⚠️  Fixing permissions to 644..."
+      chmod 644 "$htpasswd_file"
+    fi
+  else
+    log_error "❌ Htpasswd file không tồn tại: $htpasswd_file"
+    return 1
+  fi
+  
   # Test Nginx config
   log_info "🔍 Đang kiểm tra nginx config..."
   nginx_test_output=$(nginx -t 2>&1)
@@ -1914,9 +1943,20 @@ EOF
   
   if [ $nginx_test_status -eq 0 ]; then
     log_info "✅ Nginx config hợp lệ"
-    systemctl reload nginx
-    log_info "🔄 Đã reload nginx"
-    rm -f "${config_file}.bak"
+    
+    # Use restart instead of reload for auth changes
+    log_info "🔄 Đang restart nginx (cần cho auth changes)..."
+    systemctl restart nginx
+    
+    if [ $? -eq 0 ]; then
+      log_info "✅ Nginx đã restart thành công"
+      rm -f "${config_file}.bak"
+    else
+      log_error "❌ Nginx restart thất bại"
+      mv "${config_file}.bak" "$config_file"
+      systemctl restart nginx
+      return 1
+    fi
     
     echo ""
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
